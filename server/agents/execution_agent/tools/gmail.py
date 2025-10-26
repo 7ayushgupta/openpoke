@@ -324,12 +324,20 @@ def get_schemas() -> List[Dict[str, Any]]:
 # Execute a Gmail tool and record the action for the execution agent journal
 def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a Gmail tool and record the action for the execution agent journal."""
+    from ...logging_config import logger
 
     payload = {k: v for k, v in arguments.items() if v is not None}
     payload_str = json.dumps(payload, ensure_ascii=False, sort_keys=True) if payload else "{}"
+    
+    logger.info(f"[GMAIL] Executing {tool_name} with user ID: {composio_user_id}")
+    logger.debug(f"[GMAIL] Tool arguments: {payload_str}")
+    
     try:
         result = execute_gmail_tool(tool_name, composio_user_id, arguments=payload)
+        logger.info(f"[GMAIL] {tool_name} executed successfully")
+        logger.debug(f"[GMAIL] Tool result: {result}")
     except Exception as exc:
+        logger.error(f"[GMAIL] {tool_name} failed with error: {exc}")
         _LOG_STORE.record_action(
             _GMAIL_AGENT_NAME,
             description=f"{tool_name} failed | args={payload_str} | error={exc}",
@@ -355,6 +363,8 @@ def gmail_create_draft(
     thread_id: Optional[str] = None,
     attachment: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    from ...logging_config import logger
+    
     arguments: Dict[str, Any] = {
         "recipient_email": recipient_email,
         "subject": subject,
@@ -366,9 +376,17 @@ def gmail_create_draft(
         "thread_id": thread_id,
         "attachment": attachment,
     }
+    
+    logger.info(f"[GMAIL] Creating draft for {recipient_email} with subject: {subject}")
     composio_user_id = get_active_gmail_user_id()
+    logger.info(f"[GMAIL] Active user ID: {composio_user_id}")
+    
     if not composio_user_id:
-        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+        error_msg = "Gmail not connected. Please connect Gmail in settings first."
+        logger.warning(f"[GMAIL] {error_msg}")
+        return {"error": error_msg}
+    
+    logger.info(f"[GMAIL] Executing GMAIL_CREATE_EMAIL_DRAFT with user ID: {composio_user_id}")
     return _execute("GMAIL_CREATE_EMAIL_DRAFT", composio_user_id, arguments)
 
 
@@ -376,10 +394,19 @@ def gmail_create_draft(
 def gmail_execute_draft(
     draft_id: str,
 ) -> Dict[str, Any]:
+    from ...logging_config import logger
+    
     arguments = {"draft_id": draft_id}
+    logger.info(f"[GMAIL] Executing draft with ID: {draft_id}")
     composio_user_id = get_active_gmail_user_id()
+    logger.info(f"[GMAIL] Active user ID: {composio_user_id}")
+    
     if not composio_user_id:
-        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+        error_msg = "Gmail not connected. Please connect Gmail in settings first."
+        logger.warning(f"[GMAIL] {error_msg}")
+        return {"error": error_msg}
+    
+    logger.info(f"[GMAIL] Executing GMAIL_SEND_DRAFT with user ID: {composio_user_id}")
     return _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments)
 
 

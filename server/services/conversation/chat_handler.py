@@ -8,6 +8,7 @@ from ...agents.interaction_agent.runtime import InteractionAgentRuntime
 from ...logging_config import logger
 from ...models import ChatMessage, ChatRequest
 from ...utils import error_response
+from ...services.admin import get_admin_status_service
 
 
 # Extract the most recent user message from the chat request payload
@@ -31,11 +32,21 @@ async def handle_chat_request(payload: ChatRequest) -> Union[PlainTextResponse, 
 
     logger.info("chat request", extra={"message_length": len(user_content)})
 
+    # Record interaction agent activity
+    admin_service = get_admin_status_service()
+    admin_service.record_interaction_activity()
+
     try:
         runtime = InteractionAgentRuntime()
     except ValueError as ve:
         # Missing API key error
-        logger.error("configuration error", extra={"error": str(ve)})
+        logger.error("LLM configuration error", extra={
+            "error": str(ve),
+            "error_type": type(ve).__name__,
+            "llm_provider": get_settings().llm_provider,
+            "has_openai_key": bool(get_settings().openai_api_key),
+            "has_openrouter_key": bool(get_settings().openrouter_api_key)
+        })
         return error_response(str(ve), status_code=status.HTTP_400_BAD_REQUEST)
 
     async def _run_interaction() -> None:

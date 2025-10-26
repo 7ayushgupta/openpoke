@@ -8,7 +8,7 @@ from .agent import build_system_prompt, prepare_message_with_history
 from .tools import ToolResult, get_tool_schemas, handle_tool_call
 from ...config import get_settings
 from ...services.conversation import get_conversation_log, get_working_memory_log
-from ...openrouter_client import request_chat_completion
+from ...llm_client import request_chat_completion
 from ...logging_config import logger
 
 
@@ -49,23 +49,76 @@ class InteractionAgentRuntime:
     # Initialize interaction agent runtime with settings and service dependencies
     def __init__(self) -> None:
         settings = get_settings()
-        self.api_key = settings.openrouter_api_key
         self.model = settings.interaction_agent_model
         self.settings = settings
         self.conversation_log = get_conversation_log()
         self.working_memory_log = get_working_memory_log()
         self.tool_schemas = get_tool_schemas()
 
-        if not self.api_key:
-            raise ValueError(
-                "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
-            )
+        # Check API key based on configured provider
+        from ...llm_client.client import _get_provider
+        provider = _get_provider()
+        
+        if provider == "openai":
+            self.api_key = settings.openai_api_key
+            if not self.api_key:
+                raise ValueError(
+                    "OpenAI API key not configured. Set OPENAI_API_KEY environment variable."
+                )
+        else:  # openrouter
+            self.api_key = settings.openrouter_api_key
+            if not self.api_key:
+                raise ValueError(
+                    "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
+                )
+        
+        # Initialize MCP registry if configured
+        self._initialize_mcp_registry()
+
+    def _initialize_mcp_registry(self) -> None:
+        """Initialize MCP registry with configured servers."""
+        try:
+            from ...mcp_client.registry import get_mcp_registry
+            from ...mcp_client.models import MCPServerConfig
+            from ...services.mcp import get_mcp_server_store
+            
+            registry = get_mcp_registry()
+            
+            # Load servers from configuration and storage
+            store = get_mcp_server_store()
+            configured_servers = store.list_servers()
+            
+            # Add servers from environment configuration
+            for server_data in self.settings.mcp_servers:
+                try:
+                    config = MCPServerConfig(**server_data)
+                    registry.add_server(config)
+                except Exception as exc:
+                    logger.warning(f"Failed to load MCP server from config: {server_data}", extra={"error": str(exc)})
+            
+            # Add servers from storage
+            for config in configured_servers:
+                registry.add_server(config)
+            
+            # Initialize the registry asynchronously
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(registry.initialize())
+            except RuntimeError:
+                # No event loop, initialize in background
+                asyncio.create_task(registry.initialize())
+                
+        except Exception as exc:
+            logger.warning(f"Failed to initialize MCP registry: {exc}")
 
     # Main entry point for processing user messages through the LLM interaction loop
     async def execute(self, user_message: str) -> InteractionResult:
         """Handle a user-authored message."""
 
         try:
+            logger.info(f"[INTERACTION] Processing user message: {user_message[:150]}{'...' if len(user_message) > 150 else ''}")
+            
             transcript_before = self._load_conversation_transcript()
             self.conversation_log.record_user_message(user_message)
 
@@ -74,10 +127,12 @@ class InteractionAgentRuntime:
                 user_message, transcript_before, message_type="user"
             )
 
-            logger.info("Processing user message through interaction agent")
+            logger.info(f"[INTERACTION] Starting interaction loop with {len(messages)} messages")
             summary = await self._run_interaction_loop(system_prompt, messages)
 
             final_response = self._finalize_response(summary)
+            logger.info(f"[INTERACTION] Final response: {final_response[:200]}{'...' if len(final_response) > 200 else ''}")
+            logger.info(f"[INTERACTION] Used {len(summary.execution_agents)} execution agents: {list(summary.execution_agents)}")
 
             if final_response and not summary.user_messages:
                 self.conversation_log.record_reply(final_response)
@@ -89,7 +144,16 @@ class InteractionAgentRuntime:
             )
 
         except Exception as exc:
-            logger.error("Interaction agent failed", extra={"error": str(exc)})
+            logger.error(
+                "Interaction agent failed", 
+                extra={
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                    "user_message_length": len(user_message),
+                    "api_key_present": bool(self.api_key),
+                    "model": self.model
+                }
+            )
             return InteractionResult(
                 success=False,
                 response="",
@@ -124,7 +188,16 @@ class InteractionAgentRuntime:
             )
 
         except Exception as exc:
-            logger.error("Interaction agent (agent message) failed", extra={"error": str(exc)})
+            logger.error(
+                "Interaction agent (agent message) failed", 
+                extra={
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                    "agent_message_length": len(agent_message),
+                    "api_key_present": bool(self.api_key),
+                    "model": self.model
+                }
+            )
             return InteractionResult(
                 success=False,
                 response="",
@@ -140,8 +213,21 @@ class InteractionAgentRuntime:
         """Iteratively query the LLM until it issues a final response."""
 
         summary = _LoopSummary()
+        logger.info(
+            "Starting interaction loop",
+            extra={
+                "max_iterations": self.MAX_TOOL_ITERATIONS,
+                "initial_message_count": len(messages),
+                "system_prompt_length": len(system_prompt)
+            }
+        )
 
         for iteration in range(self.MAX_TOOL_ITERATIONS):
+            logger.debug(
+                f"Interaction loop iteration {iteration + 1}/{self.MAX_TOOL_ITERATIONS}",
+                extra={"iteration": iteration + 1, "message_count": len(messages)}
+            )
+            
             response = await self._make_llm_call(system_prompt, messages)
             assistant_message = self._extract_assistant_message(response)
 
@@ -161,15 +247,28 @@ class InteractionAgentRuntime:
             messages.append(assistant_entry)
 
             if not parsed_tool_calls:
+                logger.debug("No tool calls found, ending interaction loop")
                 break
+
+            logger.info(
+                f"Processing {len(parsed_tool_calls)} tool calls",
+                extra={
+                    "tool_count": len(parsed_tool_calls),
+                    "tool_names": [tc.name for tc in parsed_tool_calls],
+                    "iteration": iteration + 1
+                }
+            )
 
             for tool_call in parsed_tool_calls:
                 summary.tool_names.append(tool_call.name)
 
                 if tool_call.name == "send_message_to_agent":
                     agent_name = tool_call.arguments.get("agent_name")
+                    instructions = tool_call.arguments.get("instructions", "")
                     if isinstance(agent_name, str) and agent_name:
                         summary.execution_agents.add(agent_name)
+                        logger.info(f"[INTERACTION] Triggering execution agent: {agent_name}")
+                        logger.info(f"[INTERACTION] Agent instructions: {instructions[:150]}{'...' if len(instructions) > 150 else ''}")
 
                 result = self._execute_tool(tool_call)
 
@@ -206,17 +305,45 @@ class InteractionAgentRuntime:
     ) -> Dict[str, Any]:
         """Make an LLM call via OpenRouter."""
 
-        logger.debug(
-            "Interaction agent calling LLM",
-            extra={"model": self.model, "tools": len(self.tool_schemas)},
+        logger.info(
+            "Interaction agent calling OpenRouter LLM",
+            extra={
+                "model": self.model, 
+                "tools": len(self.tool_schemas),
+                "message_count": len(messages),
+                "api_key_present": bool(self.api_key),
+                "api_key_length": len(self.api_key) if self.api_key else 0
+            },
         )
-        return await request_chat_completion(
-            model=self.model,
-            messages=messages,
-            system=system_prompt,
-            api_key=self.api_key,
-            tools=self.tool_schemas,
-        )
+        
+        try:
+            response = await request_chat_completion(
+                model=self.model,
+                messages=messages,
+                system=system_prompt,
+                api_key=self.api_key,
+                tools=self.tool_schemas,
+            )
+            logger.info(
+                "OpenRouter LLM call successful",
+                extra={
+                    "model": self.model,
+                    "response_keys": list(response.keys()) if response else [],
+                    "has_choices": "choices" in response if response else False
+                }
+            )
+            return response
+        except Exception as e:
+            logger.error(
+                "OpenRouter LLM call failed",
+                extra={
+                    "model": self.model,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "api_key_present": bool(self.api_key)
+                }
+            )
+            raise
 
     # Extract the assistant's message from the OpenRouter API response structure
     def _extract_assistant_message(self, response: Dict[str, Any]) -> Dict[str, Any]:
@@ -287,17 +414,25 @@ class InteractionAgentRuntime:
     def _execute_tool(self, tool_call: _ToolCall) -> ToolResult:
         """Execute a tool call and convert low-level errors into structured results."""
 
+        logger.info(f"[INTERACTION] Executing tool: {tool_call.name}")
+        logger.debug(f"[INTERACTION] Tool arguments: {tool_call.arguments}")
+
         if "__invalid_arguments__" in tool_call.arguments:
             error = tool_call.arguments["__invalid_arguments__"]
+            logger.warning(f"[INTERACTION] Tool {tool_call.name} rejected due to invalid arguments: {error}")
             self._log_tool_invocation(tool_call, stage="rejected", detail={"error": error})
             return ToolResult(success=False, payload={"error": error})
 
         try:
             self._log_tool_invocation(tool_call, stage="start")
+            logger.info(f"[INTERACTION] Calling handle_tool_call for {tool_call.name}")
             result = handle_tool_call(tool_call.name, tool_call.arguments)
+            logger.info(f"[INTERACTION] Tool {tool_call.name} returned result: success={result.success}")
+            if result.payload:
+                logger.debug(f"[INTERACTION] Tool {tool_call.name} payload: {result.payload}")
         except Exception as exc:  # pragma: no cover - defensive
             logger.error(
-                "Tool execution crashed",
+                f"[INTERACTION] Tool {tool_call.name} execution crashed: {exc}",
                 extra={"tool": tool_call.name, "error": str(exc)},
             )
             self._log_tool_invocation(
@@ -309,7 +444,7 @@ class InteractionAgentRuntime:
 
         if not isinstance(result, ToolResult):
             logger.warning(
-                "Tool did not return ToolResult; coercing",
+                f"[INTERACTION] Tool {tool_call.name} did not return ToolResult; coercing",
                 extra={"tool": tool_call.name},
             )
             wrapped = ToolResult(success=True, payload=result)
@@ -317,13 +452,10 @@ class InteractionAgentRuntime:
             return wrapped
 
         status = "success" if result.success else "error"
-        logger.debug(
-            "Tool executed",
-            extra={
-                "tool": tool_call.name,
-                "status": status,
-            },
-        )
+        logger.info(f"[INTERACTION] Tool {tool_call.name} completed with status: {status}")
+        if not result.success and result.payload:
+            logger.warning(f"[INTERACTION] Tool {tool_call.name} failed with payload: {result.payload}")
+        
         self._log_tool_invocation(tool_call, stage="done", result=result)
         return result
 

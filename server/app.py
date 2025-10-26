@@ -11,6 +11,7 @@ from .config import get_settings
 from .logging_config import configure_logging, logger
 from .routes import api_router
 from .services import get_important_email_watcher, get_trigger_scheduler
+from .llm_client.client import _log_provider_initialization
 
 
 # Register global exception handlers for consistent error responses across the API
@@ -45,6 +46,12 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 configure_logging()
 _settings = get_settings()
+
+# Log startup banner and LLM provider configuration
+logger.info("🚀 Starting OpenPoke Server...")
+logger.info(f"📦 Version: {_settings.app_version}")
+logger.info(f"🌐 Server: {_settings.server_host}:{_settings.server_port}")
+_log_provider_initialization()
 
 app = FastAPI(
     title=_settings.app_name,

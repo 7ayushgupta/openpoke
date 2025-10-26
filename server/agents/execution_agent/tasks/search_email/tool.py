@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from server.config import get_settings
 from server.logging_config import logger
-from server.openrouter_client import request_chat_completion
+from server.llm_client import request_chat_completion
 from server.services.execution import get_execution_agent_logs
 from server.services.gmail import (
     EmailTextCleaner,
@@ -71,13 +71,22 @@ def _validate_gmail_connection() -> Optional[str]:
     return get_active_gmail_user_id()
 
 
-def _validate_openrouter_config() -> Tuple[Optional[str], Optional[str]]:
-    """Validate OpenRouter configuration and return (api_key, model) or (None, error)."""
+def _validate_llm_config() -> Tuple[Optional[str], Optional[str]]:
+    """Validate LLM configuration and return (model, error) or (model, None)."""
     settings = get_settings()
-    api_key = settings.openrouter_api_key
-    if not api_key:
-        return None, ERROR_OPENROUTER_NOT_CONFIGURED
-    return api_key, settings.execution_agent_search_model
+    model = settings.execution_agent_search_model
+    
+    # Check if the configured provider has the required API key
+    if settings.llm_provider == "openrouter":
+        if not settings.openrouter_api_key:
+            return None, ERROR_OPENROUTER_NOT_CONFIGURED
+    elif settings.llm_provider == "openai":
+        if not settings.openai_api_key:
+            return None, "OpenAI API key not configured. Set OPENAI_API_KEY."
+    else:
+        return None, f"Unknown LLM provider: {settings.llm_provider}"
+    
+    return model, None
 
 
 # Return task tool callables
@@ -105,17 +114,16 @@ async def task_email_search(search_query: str) -> Any:
         logger.error(f"[EMAIL_SEARCH] Gmail not connected")
         return {"error": ERROR_GMAIL_NOT_CONNECTED}
     
-    api_key, model_or_error = _validate_openrouter_config()
-    if not api_key:
-        logger.error(f"[EMAIL_SEARCH] OpenRouter not configured: {model_or_error}")
-        return {"error": model_or_error}
+    model, error = _validate_llm_config()
+    if not model:
+        logger.error(f"[EMAIL_SEARCH] LLM not configured: {error}")
+        return {"error": error}
     
     try:
         result = await _run_email_search(
             search_query=cleaned_query,
             composio_user_id=composio_user_id,
-            model=model_or_error,
-            api_key=api_key,
+            model=model,
         )
         logger.info(f"[EMAIL_SEARCH] Found {len(result) if isinstance(result, list) else 0} emails")
         return result
@@ -130,7 +138,6 @@ async def _run_email_search(
     search_query: str,
     composio_user_id: str,
     model: str,
-    api_key: str,
 ) -> List[Dict[str, Any]]:
     """Execute the main email search orchestration loop."""
     messages: List[Dict[str, Any]] = [
@@ -151,7 +158,6 @@ async def _run_email_search(
             model=model,
             messages=messages,
             system=get_system_prompt(),
-            api_key=api_key,
             tools=[GMAIL_FETCH_EMAILS_SCHEMA, _COMPLETION_TOOL_SCHEMA],
         )
         

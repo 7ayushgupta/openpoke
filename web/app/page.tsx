@@ -6,6 +6,7 @@ import { ChatHeader } from '@/components/chat/ChatHeader';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ChatMessages } from '@/components/chat/ChatMessages';
 import { ErrorBanner } from '@/components/chat/ErrorBanner';
+import { SuccessBanner } from '@/components/chat/SuccessBanner';
 import { useAutoScroll } from '@/components/chat/useAutoScroll';
 import type { ChatBubble } from '@/components/chat/types';
 
@@ -42,6 +43,7 @@ export default function Page() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const { scrollContainerRef, handleScroll } = useAutoScroll({
     items: messages,
@@ -195,14 +197,24 @@ export default function Page() {
 
   const handleClearHistory = useCallback(async () => {
     try {
+      setError(null);
+      setSuccess(null);
+      setIsWaitingForResponse(false);
+      
       const res = await fetch('/api/chat/history', { method: 'DELETE' });
       if (!res.ok) {
         console.error('Failed to clear chat history', res.statusText);
+        setError('Failed to clear history. Please try again.');
         return;
       }
+      
       setMessages([]);
+      // Show success message briefly
+      setSuccess('History cleared successfully! All execution agents have been stopped.');
+      setTimeout(() => setSuccess(null), 3000); // Auto-hide after 3 seconds
     } catch (err) {
       console.error('Failed to clear chat history', err);
+      setError('Failed to clear history. Please try again.');
     }
   }, [setMessages]);
 
@@ -226,6 +238,7 @@ export default function Page() {
   }, [setInput]);
 
   const clearError = useCallback(() => setError(null), [setError]);
+  const clearSuccess = useCallback(() => setSuccess(null), [setSuccess]);
 
   return (
     <main className="chat-bg min-h-screen p-4 sm:p-6">
@@ -242,6 +255,7 @@ export default function Page() {
 
           <div className="border-t border-gray-200 p-3">
             {error && <ErrorBanner message={error} onDismiss={clearError} />}
+            {success && <SuccessBanner message={success} onDismiss={clearSuccess} />}
 
             <ChatInput
               value={input}

@@ -1,9 +1,10 @@
 """Simplified configuration management."""
 
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -39,6 +40,17 @@ def _env_int(name: str, fallback: int) -> int:
         return fallback
 
 
+def _env_json_list(name: str, fallback: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Parse JSON list from environment variable."""
+    value = os.getenv(name)
+    if not value:
+        return fallback
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return fallback
+
+
 class Settings(BaseModel):
     """Application settings with lightweight env fallbacks."""
 
@@ -51,14 +63,19 @@ class Settings(BaseModel):
     server_port: int = Field(default=_env_int("OPENPOKE_PORT", 8001))
 
     # LLM model selection
-    interaction_agent_model: str = Field(default="anthropic/claude-sonnet-4")
-    execution_agent_model: str = Field(default="anthropic/claude-sonnet-4")
-    execution_agent_search_model: str = Field(default="anthropic/claude-sonnet-4")
-    summarizer_model: str = Field(default="anthropic/claude-sonnet-4")
-    email_classifier_model: str = Field(default="anthropic/claude-sonnet-4")
+    interaction_agent_model: str = Field(default=os.getenv("OPENPOKE_INTERACTION_MODEL", "anthropic/claude-sonnet-4"))
+    execution_agent_model: str = Field(default=os.getenv("OPENPOKE_EXECUTION_MODEL", "anthropic/claude-sonnet-4"))
+    execution_agent_search_model: str = Field(default=os.getenv("OPENPOKE_EXECUTION_SEARCH_MODEL", "anthropic/claude-sonnet-4"))
+    summarizer_model: str = Field(default=os.getenv("OPENPOKE_SUMMARIZER_MODEL", "anthropic/claude-sonnet-4"))
+    email_classifier_model: str = Field(default=os.getenv("OPENPOKE_EMAIL_CLASSIFIER_MODEL", "anthropic/claude-sonnet-4"))
 
+    # LLM Provider Configuration
+    llm_provider: str = Field(default=os.getenv("LLM_PROVIDER", "openrouter"))
+    
     # Credentials / integrations
     openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
+    openai_api_key: Optional[str] = Field(default=os.getenv("OPENAI_API_KEY"))
+    openai_base_url: str = Field(default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
     composio_api_key: Optional[str] = Field(default=os.getenv("COMPOSIO_API_KEY"))
 
@@ -70,6 +87,11 @@ class Settings(BaseModel):
     # Summarisation controls
     conversation_summary_threshold: int = Field(default=100)
     conversation_summary_tail_size: int = Field(default=10)
+
+    # MCP server configuration
+    mcp_servers: List[Dict[str, Any]] = Field(
+        default_factory=lambda: _env_json_list("OPENPOKE_MCP_SERVERS", [])
+    )
 
     @property
     def cors_allow_origins(self) -> List[str]:

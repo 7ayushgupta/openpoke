@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .agent import ExecutionAgent
 from .tools import get_tool_schemas, get_tool_registry
 from ...config import get_settings
-from ...openrouter_client import request_chat_completion
+from ...llm_client import request_chat_completion
 from ...logging_config import logger
 
 
@@ -31,20 +31,32 @@ class ExecutionAgentRuntime:
     def __init__(self, agent_name: str):
         settings = get_settings()
         self.agent = ExecutionAgent(agent_name)
-        self.api_key = settings.openrouter_api_key
         self.model = settings.execution_agent_model
         self.tool_registry = get_tool_registry(agent_name=agent_name)
         self.tool_schemas = get_tool_schemas()
 
-        if not self.api_key:
-            raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
+        # Check API key based on configured provider
+        from ...llm_client.client import _get_provider
+        provider = _get_provider()
+        
+        if provider == "openai":
+            self.api_key = settings.openai_api_key
+            if not self.api_key:
+                raise ValueError("OpenAI API key not configured. Set OPENAI_API_KEY environment variable.")
+        else:  # openrouter
+            self.api_key = settings.openrouter_api_key
+            if not self.api_key:
+                raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
 
     # Main execution loop for running agent with LLM calls and tool execution
     async def execute(self, instructions: str) -> ExecutionResult:
         """Execute the agent with given instructions."""
         try:
+            logger.info(f"[{self.agent.name}] Starting execution with instructions: {instructions[:200]}{'...' if len(instructions) > 200 else ''}")
+            
             # Build system prompt with history
             system_prompt = self.agent.build_system_prompt_with_history()
+            logger.debug(f"[{self.agent.name}] System prompt length: {len(system_prompt)} characters")
 
             # Start conversation with the instruction
             messages = [{"role": "user", "content": instructions}]
@@ -53,7 +65,7 @@ class ExecutionAgentRuntime:
 
             for iteration in range(self.MAX_TOOL_ITERATIONS):
                 logger.info(
-                    f"[{self.agent.name}] Requesting plan (iteration {iteration + 1})"
+                    f"[{self.agent.name}] Requesting plan (iteration {iteration + 1}/{self.MAX_TOOL_ITERATIONS})"
                 )
                 response = await self._make_llm_call(system_prompt, messages, with_tools=True)
                 assistant_message = response.get("choices", [{}])[0].get("message", {})
@@ -61,8 +73,15 @@ class ExecutionAgentRuntime:
                 if not assistant_message:
                     raise RuntimeError("LLM response did not include an assistant message")
 
+                # Log assistant response content
+                assistant_content = assistant_message.get("content", "")
+                if assistant_content:
+                    logger.debug(f"[{self.agent.name}] Assistant response: {assistant_content[:300]}{'...' if len(assistant_content) > 300 else ''}")
+
                 raw_tool_calls = assistant_message.get("tool_calls", []) or []
                 parsed_tool_calls = self._extract_tool_calls(raw_tool_calls)
+                
+                logger.info(f"[{self.agent.name}] Found {len(parsed_tool_calls)} tool calls: {[tc.get('name', 'unknown') for tc in parsed_tool_calls]}")
 
                 assistant_entry: Dict[str, Any] = {
                     "role": "assistant",
@@ -82,7 +101,7 @@ class ExecutionAgentRuntime:
                     call_id = tool_call.get("id")
 
                     if not tool_name:
-                        logger.warning("Tool call missing name: %s", tool_call)
+                        logger.warning(f"[{self.agent.name}] Tool call missing name: {tool_call}")
                         failure = {"error": "Tool call missing name; unable to execute."}
                         tool_message = {
                             "role": "tool",
@@ -95,12 +114,32 @@ class ExecutionAgentRuntime:
                         continue
 
                     tools_executed.append(tool_name)
-                    logger.info(f"[{self.agent.name}] Executing tool: {tool_name}")
+                    logger.info(f"[{self.agent.name}] Executing tool: {tool_name} with args: {tool_args}")
 
                     success, result = await self._execute_tool(tool_name, tool_args)
 
                     if success:
                         logger.info(f"[{self.agent.name}] Tool {tool_name} completed successfully")
+                        # Log detailed results for email-related tools
+                        if tool_name in ["search_emails", "get_email", "list_emails", "fetch_emails"]:
+                            if isinstance(result, dict):
+                                if "emails" in result:
+                                    email_count = len(result["emails"]) if isinstance(result["emails"], list) else 0
+                                    logger.info(f"[{self.agent.name}] Email tool {tool_name} returned {email_count} emails")
+                                    if email_count > 0 and isinstance(result["emails"], list):
+                                        for i, email in enumerate(result["emails"][:3]):  # Log first 3 emails
+                                            if isinstance(email, dict):
+                                                subject = email.get("subject", "No subject")
+                                                sender = email.get("sender", email.get("from", "Unknown sender"))
+                                                logger.info(f"[{self.agent.name}] Email {i+1}: From: {sender}, Subject: {subject}")
+                                        if email_count > 3:
+                                            logger.info(f"[{self.agent.name}] ... and {email_count - 3} more emails")
+                                elif "email" in result:
+                                    email = result["email"]
+                                    if isinstance(email, dict):
+                                        subject = email.get("subject", "No subject")
+                                        sender = email.get("sender", email.get("from", "Unknown sender"))
+                                        logger.info(f"[{self.agent.name}] Retrieved email: From: {sender}, Subject: {subject}")
                         record_payload = self._safe_json_dump(result)
                     else:
                         error_detail = result.get("error") if isinstance(result, dict) else str(result)

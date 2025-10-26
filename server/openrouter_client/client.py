@@ -66,6 +66,21 @@ async def request_chat_completion(
         payload["tools"] = tools
 
     url = f"{base_url.rstrip('/')}/chat/completions"
+    
+    # Import logger here to avoid circular imports
+    from ..logging_config import logger
+    
+    logger.debug(
+        "Making OpenRouter API request",
+        extra={
+            "model": model,
+            "message_count": len(messages),
+            "has_system": bool(system),
+            "tool_count": len(tools) if tools else 0,
+            "api_key_present": bool(api_key),
+            "url": url
+        }
+    )
 
     async with httpx.AsyncClient() as client:
         try:
@@ -75,14 +90,38 @@ async def request_chat_completion(
                 json=payload,
                 timeout=60.0,  # Set reasonable timeout instead of None
             )
+            logger.debug(
+                "OpenRouter API response received",
+                extra={
+                    "status_code": response.status_code,
+                    "response_size": len(response.content),
+                    "model": model
+                }
+            )
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
+                logger.error(
+                    "OpenRouter API returned error status",
+                    extra={
+                        "status_code": exc.response.status_code,
+                        "model": model,
+                        "response_text": exc.response.text[:500]  # Truncate for logging
+                    }
+                )
                 _handle_response_error(exc)
             return response.json()
         except httpx.HTTPStatusError as exc:  # pragma: no cover - handled above
             _handle_response_error(exc)
         except httpx.HTTPError as exc:
+            logger.error(
+                "OpenRouter HTTP error",
+                extra={
+                    "error": str(exc),
+                    "model": model,
+                    "url": url
+                }
+            )
             raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
 
     raise OpenRouterError("OpenRouter request failed: unknown error")

@@ -32,12 +32,17 @@ def _set_active_gmail_user_id(user_id: Optional[str]) -> None:
     sanitized = _normalized(user_id)
     with _ACTIVE_USER_ID_LOCK:
         global _ACTIVE_USER_ID
+        old_user_id = _ACTIVE_USER_ID
         _ACTIVE_USER_ID = sanitized or None
+        if old_user_id != _ACTIVE_USER_ID:
+            logger.info(f"[GMAIL] Active user ID changed from '{old_user_id}' to '{_ACTIVE_USER_ID}'")
 
 
 def get_active_gmail_user_id() -> Optional[str]:
     with _ACTIVE_USER_ID_LOCK:
-        return _ACTIVE_USER_ID
+        user_id = _ACTIVE_USER_ID
+        logger.debug(f"Gmail active user ID check: {user_id}")
+        return user_id
 
 
 def _gmail_import_client():
@@ -470,6 +475,9 @@ def execute_gmail_tool(
     *,
     arguments: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    logger.info(f"[GMAIL_SERVICE] Executing {tool_name} for user: {composio_user_id}")
+    logger.debug(f"[GMAIL_SERVICE] Raw arguments: {arguments}")
+    
     prepared_arguments: Dict[str, Any] = {}
     if isinstance(arguments, dict):
         for key, value in arguments.items():
@@ -477,18 +485,28 @@ def execute_gmail_tool(
                 prepared_arguments[key] = value
 
     prepared_arguments.setdefault("user_id", "me")
+    logger.debug(f"[GMAIL_SERVICE] Prepared arguments: {prepared_arguments}")
 
     try:
+        logger.info(f"[GMAIL_SERVICE] Getting Composio client")
         client = _get_composio_client()
+        logger.info(f"[GMAIL_SERVICE] Client obtained, executing tool")
+        
         result = client.client.tools.execute(
             tool_name,
             user_id=composio_user_id,
             arguments=prepared_arguments,
         )
-        return _normalize_tool_response(result)
+        
+        logger.info(f"[GMAIL_SERVICE] Tool execution completed successfully")
+        normalized_result = _normalize_tool_response(result)
+        logger.debug(f"[GMAIL_SERVICE] Normalized result: {normalized_result}")
+        return normalized_result
+        
     except Exception as exc:
+        logger.error(f"[GMAIL_SERVICE] Tool execution failed: {exc}")
         logger.exception(
             "gmail tool execution failed",
-            extra={"tool": tool_name, "user_id": composio_user_id},
+            extra={"tool": tool_name, "user_id": composio_user_id, "arguments": prepared_arguments},
         )
         raise RuntimeError(f"{tool_name} invocation failed: {exc}") from exc

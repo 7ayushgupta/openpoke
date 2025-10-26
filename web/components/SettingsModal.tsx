@@ -118,6 +118,15 @@ export default function SettingsModal({
   const [gmailEmail, setGmailEmail] = useState('');
   const [gmailConnId, setGmailConnId] = useState('');
   const [gmailProfile, setGmailProfile] = useState<Record<string, unknown> | null>(null);
+  
+  // MCP state
+  const [mcpServers, setMcpServers] = useState<any[]>([]);
+  const [mcpTools, setMcpTools] = useState<any[]>([]);
+  const [loadingMcp, setLoadingMcp] = useState(false);
+  const [newServerName, setNewServerName] = useState('');
+  const [newServerUrl, setNewServerUrl] = useState('');
+  const [newServerAuthType, setNewServerAuthType] = useState('none');
+  const [newServerApiKey, setNewServerApiKey] = useState('');
 
   const readStoredUserId = useCallback(() => {
     if (typeof window === 'undefined') return '';
@@ -189,6 +198,95 @@ export default function SettingsModal({
     }
     return details;
   }, [gmailProfile]);
+
+  // MCP functions
+  const loadMcpServers = useCallback(async () => {
+    try {
+      setLoadingMcp(true);
+      const resp = await fetch('/api/mcp/servers');
+      if (resp.ok) {
+        const data = await resp.json();
+        setMcpServers(data.servers || []);
+      }
+    } catch (err) {
+      console.error('Failed to load MCP servers:', err);
+    } finally {
+      setLoadingMcp(false);
+    }
+  }, []);
+
+  const loadMcpTools = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/mcp/tools');
+      if (resp.ok) {
+        const data = await resp.json();
+        setMcpTools(data.tools || []);
+      }
+    } catch (err) {
+      console.error('Failed to load MCP tools:', err);
+    }
+  }, []);
+
+  const addMcpServer = useCallback(async () => {
+    if (!newServerName || !newServerUrl) return;
+    
+    try {
+      setLoadingMcp(true);
+      const payload: any = {
+        server_name: newServerName,
+        url: newServerUrl,
+        auth_type: newServerAuthType === 'none' ? null : newServerAuthType,
+      };
+      
+      if (newServerAuthType === 'api_key' && newServerApiKey) {
+        payload.auth_config = { api_key: newServerApiKey };
+      }
+      
+      const resp = await fetch('/api/mcp/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      
+      if (resp.ok) {
+        setNewServerName('');
+        setNewServerUrl('');
+        setNewServerAuthType('none');
+        setNewServerApiKey('');
+        await loadMcpServers();
+        await loadMcpTools();
+      }
+    } catch (err) {
+      console.error('Failed to add MCP server:', err);
+    } finally {
+      setLoadingMcp(false);
+    }
+  }, [newServerName, newServerUrl, newServerAuthType, newServerApiKey, loadMcpServers, loadMcpTools]);
+
+  const removeMcpServer = useCallback(async (serverName: string) => {
+    try {
+      setLoadingMcp(true);
+      const resp = await fetch(`/api/mcp/servers/${encodeURIComponent(serverName)}`, {
+        method: 'DELETE',
+      });
+      
+      if (resp.ok) {
+        await loadMcpServers();
+        await loadMcpTools();
+      }
+    } catch (err) {
+      console.error('Failed to remove MCP server:', err);
+    } finally {
+      setLoadingMcp(false);
+    }
+  }, [loadMcpServers, loadMcpTools]);
+
+  useEffect(() => {
+    if (open) {
+      loadMcpServers();
+      loadMcpTools();
+    }
+  }, [open, loadMcpServers, loadMcpTools]);
 
   const handleConnectGmail = useCallback(async () => {
     try {
@@ -466,6 +564,147 @@ export default function SettingsModal({
                 )}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* MCP Servers Section */}
+        <div className="mt-8">
+          <div className="border-b border-gray-200 pb-4">
+            <h3 className="text-base font-semibold text-gray-900">MCP Servers</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Connect to external MCP servers to access additional tools and capabilities.
+            </p>
+          </div>
+
+          <div className="mt-4">
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">Add New Server</h4>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Server Name</label>
+                    <input
+                      type="text"
+                      value={newServerName}
+                      onChange={(e) => setNewServerName(e.target.value)}
+                      placeholder="e.g., zomato"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Server URL</label>
+                    <input
+                      type="url"
+                      value={newServerUrl}
+                      onChange={(e) => setNewServerUrl(e.target.value)}
+                      placeholder="https://mcp-server.example.com/mcp"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Auth Type</label>
+                    <select
+                      value={newServerAuthType}
+                      onChange={(e) => setNewServerAuthType(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    >
+                      <option value="none">None</option>
+                      <option value="api_key">API Key</option>
+                      <option value="oauth">OAuth</option>
+                    </select>
+                  </div>
+                  {newServerAuthType === 'api_key' && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">API Key</label>
+                      <input
+                        type="password"
+                        value={newServerApiKey}
+                        onChange={(e) => setNewServerApiKey(e.target.value)}
+                        placeholder="Enter API key"
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={addMcpServer}
+                  disabled={loadingMcp || !newServerName || !newServerUrl}
+                  aria-busy={loadingMcp}
+                >
+                  Add Server
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">Configured Servers</h4>
+              {mcpServers.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-500">
+                  No MCP servers configured. Add one above to get started.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {mcpServers.map((server) => (
+                    <div key={server.name} className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">{server.name}</span>
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset ${
+                                server.enabled
+                                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 ring-amber-200'
+                              }`}
+                            >
+                              {server.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-sm text-gray-500">{server.url}</div>
+                          {server.auth_type && (
+                            <div className="mt-1 text-xs text-gray-400">Auth: {server.auth_type}</div>
+                          )}
+                          <div className="mt-1 text-xs text-gray-400">
+                            {server.tool_count} tool{server.tool_count !== 1 ? 's' : ''} available
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-md border border-transparent bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => removeMcpServer(server.name)}
+                          disabled={loadingMcp}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {mcpTools.length > 0 && (
+              <div className="mt-6">
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Available Tools</h4>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="grid gap-2">
+                    {mcpTools.map((tool) => (
+                      <div key={tool.name} className="flex items-center justify-between rounded-md border border-gray-200 bg-white p-3">
+                        <div>
+                          <div className="font-medium text-gray-900">{tool.name}</div>
+                          <div className="text-sm text-gray-500">{tool.description}</div>
+                          <div className="text-xs text-gray-400">Server: {tool.server_name}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

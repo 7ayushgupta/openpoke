@@ -3,7 +3,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
@@ -122,15 +122,20 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     get_execution_agent_logs().record_request(agent_name, instructions)
 
     action = "Created" if is_new else "Reused"
-    logger.info(f"{action} agent: {agent_name}")
+    logger.info(f"[INTERACTION] {action} execution agent: {agent_name}")
+    logger.info(f"[INTERACTION] Instructions for {agent_name}: {instructions[:200]}{'...' if len(instructions) > 200 else ''}")
 
     async def _execute_async() -> None:
         try:
             result = await _EXECUTION_BATCH_MANAGER.execute_agent(agent_name, instructions)
             status = "SUCCESS" if result.success else "FAILED"
-            logger.info(f"Agent '{agent_name}' completed: {status}")
+            logger.info(f"[INTERACTION] Agent '{agent_name}' completed: {status}")
+            if result.success:
+                logger.info(f"[INTERACTION] Agent '{agent_name}' response: {result.response[:200]}{'...' if len(result.response) > 200 else ''}")
+            else:
+                logger.warning(f"[INTERACTION] Agent '{agent_name}' failed with error: {result.error}")
         except Exception as exc:  # pragma: no cover - defensive
-            logger.error(f"Agent '{agent_name}' failed: {str(exc)}")
+            logger.error(f"[INTERACTION] Agent '{agent_name}' failed: {str(exc)}")
 
     try:
         loop = asyncio.get_running_loop()
@@ -208,10 +213,77 @@ def wait(reason: str) -> ToolResult:
     )
 
 
+# Handle MCP tool calls by routing to the MCP registry
+def _handle_mcp_tool_call(name: str, arguments: Dict[str, Any]) -> ToolResult:
+    """Handle MCP tool calls by routing to the MCP registry."""
+    try:
+        # Import here to avoid circular imports
+        from ...mcp_client.registry import get_mcp_registry
+        
+        registry = get_mcp_registry()
+        if not registry.is_initialized():
+            return ToolResult(
+                success=False,
+                payload={"error": "MCP registry not initialized"}
+            )
+        
+        # Call the tool via the registry (synchronous wrapper)
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            # Schedule the async call
+            task = loop.create_task(registry.call_tool(name, arguments))
+            # Wait for completion (this is not ideal but works for now)
+            result = loop.run_until_complete(task)
+        except RuntimeError:
+            # No event loop, run in new loop
+            result = asyncio.run(registry.call_tool(name, arguments))
+        
+        if result.success:
+            return ToolResult(
+                success=True,
+                payload=result.data,
+            )
+        else:
+            return ToolResult(
+                success=False,
+                payload={"error": result.error}
+            )
+            
+    except Exception as exc:
+        logger.error(f"MCP tool call failed: {name}", extra={"error": str(exc)})
+        return ToolResult(
+            success=False,
+            payload={"error": f"MCP tool call failed: {exc}"}
+        )
+
+
 # Return predefined tool schemas for LLM function calling
 def get_tool_schemas():
     """Return OpenAI-compatible tool schemas."""
-    return TOOL_SCHEMAS
+    schemas = TOOL_SCHEMAS.copy()
+    
+    # Add MCP tools dynamically
+    try:
+        from ...mcp_client.registry import get_mcp_registry
+        registry = get_mcp_registry()
+        if registry.is_initialized():
+            mcp_tools = registry.get_tools()
+            for tool in mcp_tools:
+                # Convert MCP tool to OpenRouter format
+                schema = {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.inputSchema,
+                    },
+                }
+                schemas.append(schema)
+    except Exception as exc:
+        logger.warning(f"Failed to load MCP tools: {exc}")
+    
+    return schemas
 
 
 # Route tool calls to appropriate handlers with argument validation and error handling
@@ -233,6 +305,10 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return send_draft(**args)
         if name == "wait":
             return wait(**args)
+        
+        # Handle MCP tools
+        if name.startswith("mcp_"):
+            return _handle_mcp_tool_call(name, args)
 
         logger.warning("unexpected tool", extra={"tool": name})
         return ToolResult(success=False, payload={"error": f"Unknown tool: {name}"})
