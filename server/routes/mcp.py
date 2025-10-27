@@ -239,3 +239,118 @@ async def refresh_mcp_server(server_name: str) -> JSONResponse:
     except Exception as exc:
         logger.error(f"Failed to refresh MCP server: {server_name}", extra={"error": str(exc)})
         return error_response(f"Failed to refresh server: {exc}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@router.get("/servers/popular", response_class=JSONResponse)
+async def get_popular_servers() -> JSONResponse:
+    """Get popular MCP server templates for one-click setup."""
+    try:
+        store = get_mcp_server_store()
+        popular_servers = store.get_popular_servers()
+        
+        return JSONResponse({
+            "ok": True,
+            "servers": popular_servers
+        })
+        
+    except Exception as exc:
+        logger.error("Failed to get popular servers", extra={"error": str(exc)})
+        return error_response(f"Failed to get popular servers: {exc}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@router.post("/servers/from-template", response_class=JSONResponse)
+async def create_server_from_template(
+    template_id: str,
+    auth_config: dict
+) -> JSONResponse:
+    """Create an MCP server from a popular template."""
+    try:
+        store = get_mcp_server_store()
+        
+        # Create server from template
+        config = store.create_from_template(template_id, auth_config)
+        if not config:
+            return error_response(f"Unknown template: {template_id}", status_code=status.HTTP_404_NOT_FOUND)
+        
+        # Add to store
+        store.add_server(config)
+        
+        # Add to registry
+        registry = get_mcp_registry()
+        registry.add_server(config)
+        
+        # Initialize server tools
+        await registry.refresh_server(config.name)
+        
+        logger.info(f"Created MCP server from template: {template_id} -> {config.name}")
+        
+        return JSONResponse({
+            "ok": True,
+            "message": f"Created {config.name} from {template_id} template",
+            "server": {
+                "name": config.name,
+                "url": config.url,
+                "auth_type": config.auth_type,
+                "enabled": config.enabled,
+            }
+        })
+        
+    except Exception as exc:
+        logger.error(f"Failed to create server from template: {template_id}", extra={"error": str(exc)})
+        return error_response(f"Failed to create server from template: {exc}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@router.post("/servers/validate", response_class=JSONResponse)
+async def validate_server_connection(
+    server_url: str,
+    auth_type: str,
+    auth_config: dict
+) -> JSONResponse:
+    """Validate MCP server connection before saving."""
+    try:
+        # Create temporary config for testing
+        temp_config = MCPServerConfig(
+            name="temp_validation",
+            url=server_url,
+            auth_type=auth_type,
+            auth_config=auth_config,
+            enabled=True
+        )
+        
+        # Test connection via registry
+        registry = get_mcp_registry()
+        registry.add_server(temp_config)
+        
+        try:
+            # Try to discover tools (this will test the connection)
+            await registry.refresh_server("temp_validation")
+            
+            # Get discovered tools
+            tools = registry.get_tools_for_server("temp_validation")
+            
+            # Clean up temporary server
+            registry.remove_server("temp_validation")
+            
+            return JSONResponse({
+                "ok": True,
+                "message": "Server connection successful",
+                "tools_discovered": len(tools),
+                "tools": [{"name": tool.name, "description": tool.description} for tool in tools]
+            })
+            
+        except Exception as conn_exc:
+            # Clean up on failure
+            try:
+                registry.remove_server("temp_validation")
+            except:
+                pass
+            
+            return JSONResponse({
+                "ok": False,
+                "message": f"Connection failed: {str(conn_exc)}",
+                "error": str(conn_exc)
+            })
+        
+    except Exception as exc:
+        logger.error("Failed to validate server connection", extra={"error": str(exc)})
+        return error_response(f"Failed to validate server: {exc}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)

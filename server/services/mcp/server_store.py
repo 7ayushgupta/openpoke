@@ -11,6 +11,47 @@ from ...logging_config import logger
 from ...mcp_client.models import MCPServerConfig
 
 
+# Popular MCP server templates for one-click setup
+POPULAR_SERVERS = {
+    "notion": {
+        "name": "Notion",
+        "url": "https://api.notion.com/mcp",
+        "auth_type": "api_key",
+        "description": "Access Notion pages and databases",
+        "setup_guide": "Get your integration token from Notion Developer Portal",
+        "icon": "📝",
+        "category": "Productivity",
+        "auth_fields": [
+            {
+                "name": "api_key",
+                "label": "Integration Token",
+                "type": "password",
+                "placeholder": "ntn_****",
+                "help": "Create an integration at https://www.notion.so/my-integrations"
+            }
+        ]
+    },
+    "github": {
+        "name": "GitHub",
+        "url": "https://api.github.com/mcp",
+        "auth_type": "api_key",
+        "description": "Manage GitHub repositories and issues",
+        "setup_guide": "Create a Personal Access Token in GitHub Settings",
+        "icon": "🐙",
+        "category": "Development",
+        "auth_fields": [
+            {
+                "name": "api_key",
+                "label": "Personal Access Token",
+                "type": "password",
+                "placeholder": "ghp_****",
+                "help": "Generate token at https://github.com/settings/tokens"
+            }
+        ]
+    }
+}
+
+
 class MCPServerStore:
     """Persistent storage for MCP server configurations."""
     
@@ -121,6 +162,35 @@ class MCPServerStore:
     def disable_server(self, server_name: str) -> bool:
         """Disable a server."""
         return self.update_server(server_name, enabled=False)
+    
+    def get_popular_servers(self) -> Dict[str, Dict[str, Any]]:
+        """Get popular server templates."""
+        return POPULAR_SERVERS.copy()
+    
+    def create_from_template(self, template_id: str, auth_config: Dict[str, Any]) -> Optional[MCPServerConfig]:
+        """Create a server configuration from a popular template."""
+        if template_id not in POPULAR_SERVERS:
+            return None
+        
+        template = POPULAR_SERVERS[template_id]
+        
+        # Generate unique name if server already exists
+        base_name = template["name"]
+        server_name = base_name
+        counter = 1
+        while server_name in self._servers:
+            server_name = f"{base_name} {counter}"
+            counter += 1
+        
+        config = MCPServerConfig(
+            name=server_name,
+            url=template["url"],
+            auth_type=template["auth_type"],
+            auth_config=auth_config,
+            enabled=True
+        )
+        
+        return config
 
 
 @lru_cache(maxsize=1)

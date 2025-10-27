@@ -1,6 +1,87 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+// Popular Server Card Component
+function PopularServerCard({ 
+  templateId, 
+  name, 
+  description, 
+  icon, 
+  category, 
+  onSetup 
+}: {
+  templateId: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  onSetup: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300 transition-colors">
+      <div className="flex items-start justify-between">
+        <div className="flex items-start space-x-3">
+          <div className="text-2xl">{icon}</div>
+          <div className="flex-1">
+            <h5 className="text-sm font-medium text-gray-900">{name}</h5>
+            <p className="text-xs text-gray-500 mt-1">{description}</p>
+            <span className="inline-block mt-2 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 rounded-full">
+              {category}
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={onSetup}
+          className="btn text-xs px-3 py-1"
+        >
+          Setup
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Collapsible Section Component
+function CollapsibleSection({ 
+  title, 
+  isCollapsed, 
+  onToggle, 
+  children, 
+  count 
+}: {
+  title: string;
+  isCollapsed: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+  count?: number;
+}) {
+  return (
+    <div className="border-b border-gray-200 pb-4">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between py-2 text-left hover:bg-gray-50 rounded-md px-2 -mx-2"
+      >
+        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+        <div className="flex items-center space-x-2">
+          {count !== undefined && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+              {count}
+            </span>
+          )}
+          <span className={`transform transition-transform ${isCollapsed ? 'rotate-180' : ''}`}>
+            ▼
+          </span>
+        </div>
+      </button>
+      {!isCollapsed && (
+        <div className="mt-4">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export type Settings = {
   timezone: string;
 };
@@ -127,6 +208,22 @@ export default function SettingsModal({
   const [newServerUrl, setNewServerUrl] = useState('');
   const [newServerAuthType, setNewServerAuthType] = useState('none');
   const [newServerApiKey, setNewServerApiKey] = useState('');
+  
+  // Popular server setup state
+  const [showNotionSetup, setShowNotionSetup] = useState(false);
+  const [showGithubSetup, setShowGithubSetup] = useState(false);
+  const [notionToken, setNotionToken] = useState('');
+  const [githubToken, setGithubToken] = useState('');
+  
+  // Collapsible sections state
+  const [collapsedSections, setCollapsedSections] = useState({
+    timezone: true,
+    gmail: false,
+    mcpPopular: false,
+    mcpCustom: true,
+    mcpServers: false,
+    mcpTools: true
+  });
 
   const readStoredUserId = useCallback(() => {
     if (typeof window === 'undefined') return '';
@@ -280,6 +377,83 @@ export default function SettingsModal({
       setLoadingMcp(false);
     }
   }, [loadMcpServers, loadMcpTools]);
+
+  // Popular server setup handlers
+  const handleNotionSetup = useCallback(() => {
+    setShowNotionSetup(true);
+  }, []);
+
+  const handleGithubSetup = useCallback(() => {
+    setShowGithubSetup(true);
+  }, []);
+
+  const setupNotionServer = useCallback(async () => {
+    if (!notionToken.trim()) return;
+    
+    try {
+      setLoadingMcp(true);
+      const resp = await fetch('/api/mcp/servers/from-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: 'notion',
+          auth_config: { api_key: notionToken.trim() }
+        }),
+      });
+      
+      if (resp.ok) {
+        setShowNotionSetup(false);
+        setNotionToken('');
+        await loadMcpServers();
+        await loadMcpTools();
+      } else {
+        const error = await resp.text();
+        console.error('Failed to setup Notion:', error);
+      }
+    } catch (err) {
+      console.error('Failed to setup Notion:', err);
+    } finally {
+      setLoadingMcp(false);
+    }
+  }, [notionToken, loadMcpServers, loadMcpTools]);
+
+  const setupGithubServer = useCallback(async () => {
+    if (!githubToken.trim()) return;
+    
+    try {
+      setLoadingMcp(true);
+      const resp = await fetch('/api/mcp/servers/from-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: 'github',
+          auth_config: { api_key: githubToken.trim() }
+        }),
+      });
+      
+      if (resp.ok) {
+        setShowGithubSetup(false);
+        setGithubToken('');
+        await loadMcpServers();
+        await loadMcpTools();
+      } else {
+        const error = await resp.text();
+        console.error('Failed to setup GitHub:', error);
+      }
+    } catch (err) {
+      console.error('Failed to setup GitHub:', err);
+    } finally {
+      setLoadingMcp(false);
+    }
+  }, [githubToken, loadMcpServers, loadMcpTools]);
+
+  // Toggle collapsible sections
+  const toggleSection = useCallback((section: keyof typeof collapsedSections) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -463,30 +637,42 @@ export default function SettingsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-lg p-6">
+      <div className="card w-full max-w-6xl p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Settings</h2>
           <button onClick={onClose} className="rounded-md p-2 hover:bg-gray-100" aria-label="Close settings">
             ✕
           </button>
         </div>
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
-            <input
-              className="input"
-              type="text"
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              placeholder="e.g. America/New_York, Europe/London"
-              readOnly={!timezone}
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              {timezone ? 'Auto-detected from browser. Edit to override.' : 'Will be auto-detected on next page load.'}
-            </p>
-          </div>
-          <div className="pt-2">
-            <div className="mb-1 text-sm font-medium text-gray-700">Integrations</div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Timezone Section */}
+          <CollapsibleSection
+            title="Timezone Settings"
+            isCollapsed={collapsedSections.timezone}
+            onToggle={() => toggleSection('timezone')}
+          >
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
+              <input
+                className="input"
+                type="text"
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                placeholder="e.g. America/New_York, Europe/London"
+                readOnly={!timezone}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                {timezone ? 'Auto-detected from browser. Edit to override.' : 'Will be auto-detected on next page load.'}
+              </p>
+            </div>
+          </CollapsibleSection>
+          {/* Gmail Integration Section */}
+          <CollapsibleSection
+            title="Gmail Integration"
+            isCollapsed={collapsedSections.gmail}
+            onToggle={() => toggleSection('gmail')}
+            count={gmailConnected ? 1 : 0}
+          >
             <div className="rounded-xl border border-gray-200 bg-white/70 p-4 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -564,21 +750,56 @@ export default function SettingsModal({
                 )}
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
+
         </div>
 
-        {/* MCP Servers Section */}
-        <div className="mt-8">
-          <div className="border-b border-gray-200 pb-4">
-            <h3 className="text-base font-semibold text-gray-900">MCP Servers</h3>
-            <p className="mt-1 text-sm text-gray-500">
+        {/* MCP Servers Section - Full Width */}
+        <div className="mt-6">
+          <CollapsibleSection
+            title="MCP Servers"
+            isCollapsed={collapsedSections.mcpServers}
+            onToggle={() => toggleSection('mcpServers')}
+            count={mcpServers.length}
+          >
+            <p className="mt-1 text-sm text-gray-500 mb-6">
               Connect to external MCP servers to access additional tools and capabilities.
             </p>
-          </div>
 
-          <div className="mt-4">
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <h4 className="text-sm font-medium text-gray-900 mb-3">Add New Server</h4>
+            {/* Popular Servers */}
+            <CollapsibleSection
+              title="Popular Servers"
+              isCollapsed={collapsedSections.mcpPopular}
+              onToggle={() => toggleSection('mcpPopular')}
+              count={2}
+            >
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <PopularServerCard
+                  templateId="notion"
+                  name="Notion"
+                  description="Access Notion pages and databases"
+                  icon="📝"
+                  category="Productivity"
+                  onSetup={handleNotionSetup}
+                />
+                <PopularServerCard
+                  templateId="github"
+                  name="GitHub"
+                  description="Manage GitHub repositories and issues"
+                  icon="🐙"
+                  category="Development"
+                  onSetup={handleGithubSetup}
+                />
+              </div>
+            </CollapsibleSection>
+
+            {/* Custom Server Section */}
+            <CollapsibleSection
+              title="Add Custom Server"
+              isCollapsed={collapsedSections.mcpCustom}
+              onToggle={() => toggleSection('mcpCustom')}
+            >
+              <div className="rounded-lg border border-gray-200 bg-white p-4">
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -638,10 +859,16 @@ export default function SettingsModal({
                   Add Server
                 </button>
               </div>
-            </div>
+              </div>
+            </CollapsibleSection>
 
-            <div className="mt-4">
-              <h4 className="text-sm font-medium text-gray-900 mb-3">Configured Servers</h4>
+            {/* Configured Servers */}
+            <CollapsibleSection
+              title="Configured Servers"
+              isCollapsed={collapsedSections.mcpServers}
+              onToggle={() => toggleSection('mcpServers')}
+              count={mcpServers.length}
+            >
               {mcpServers.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-500">
                   No MCP servers configured. Add one above to get started.
@@ -685,11 +912,16 @@ export default function SettingsModal({
                   ))}
                 </div>
               )}
-            </div>
+            </CollapsibleSection>
 
+            {/* Available Tools */}
             {mcpTools.length > 0 && (
-              <div className="mt-6">
-                <h4 className="text-sm font-medium text-gray-900 mb-3">Available Tools</h4>
+              <CollapsibleSection
+                title="Available Tools"
+                isCollapsed={collapsedSections.mcpTools}
+                onToggle={() => toggleSection('mcpTools')}
+                count={mcpTools.length}
+              >
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                   <div className="grid gap-2">
                     {mcpTools.map((tool) => (
@@ -703,9 +935,9 @@ export default function SettingsModal({
                     ))}
                   </div>
                 </div>
-              </div>
+              </CollapsibleSection>
             )}
-          </div>
+          </CollapsibleSection>
         </div>
 
         <div className="mt-6 flex justify-end gap-2">
@@ -721,6 +953,88 @@ export default function SettingsModal({
           </button>
         </div>
       </div>
+
+      {/* Notion Setup Modal */}
+      {showNotionSetup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Setup Notion Integration</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notion Integration Token
+                </label>
+                <input
+                  type="password"
+                  value={notionToken}
+                  onChange={(e) => setNotionToken(e.target.value)}
+                  placeholder="ntn_****"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Create an integration at <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">notion.so/my-integrations</a>
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowNotionSetup(false)}
+                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={setupNotionServer}
+                  disabled={loadingMcp || !notionToken.trim()}
+                  className="btn text-sm"
+                >
+                  {loadingMcp ? 'Setting up...' : 'Setup Notion'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GitHub Setup Modal */}
+      {showGithubSetup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Setup GitHub Integration</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  GitHub Personal Access Token
+                </label>
+                <input
+                  type="password"
+                  value={githubToken}
+                  onChange={(e) => setGithubToken(e.target.value)}
+                  placeholder="ghp_****"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Generate token at <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">github.com/settings/tokens</a>
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowGithubSetup(false)}
+                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={setupGithubServer}
+                  disabled={loadingMcp || !githubToken.trim()}
+                  className="btn text-sm"
+                >
+                  {loadingMcp ? 'Setting up...' : 'Setup GitHub'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
