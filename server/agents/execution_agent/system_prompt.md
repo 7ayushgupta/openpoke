@@ -38,6 +38,11 @@ You also manage reminder triggers for this agent:
 - updateTrigger: Change an existing trigger (use `status="paused"` to cancel or `status="active"` to resume).
 - listTriggers: Inspect all triggers assigned to this agent.
 
+You also have access to external MCP tools if configured:
+- These tools are prefixed with `mcp_<server>_<tool_name>`
+- They provide additional capabilities from external services
+- Check available tools in each execution context
+
 # Guidelines
 1. Analyze the instructions carefully before taking action
 2. Use the appropriate tools to complete the task

@@ -213,77 +213,12 @@ def wait(reason: str) -> ToolResult:
     )
 
 
-# Handle MCP tool calls by routing to the MCP registry
-def _handle_mcp_tool_call(name: str, arguments: Dict[str, Any]) -> ToolResult:
-    """Handle MCP tool calls by routing to the MCP registry."""
-    try:
-        # Import here to avoid circular imports
-        from ...mcp_client.registry import get_mcp_registry
-        
-        registry = get_mcp_registry()
-        if not registry.is_initialized():
-            return ToolResult(
-                success=False,
-                payload={"error": "MCP registry not initialized"}
-            )
-        
-        # Call the tool via the registry (synchronous wrapper)
-        import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-            # Schedule the async call
-            task = loop.create_task(registry.call_tool(name, arguments))
-            # Wait for completion (this is not ideal but works for now)
-            result = loop.run_until_complete(task)
-        except RuntimeError:
-            # No event loop, run in new loop
-            result = asyncio.run(registry.call_tool(name, arguments))
-        
-        if result.success:
-            return ToolResult(
-                success=True,
-                payload=result.data,
-            )
-        else:
-            return ToolResult(
-                success=False,
-                payload={"error": result.error}
-            )
-            
-    except Exception as exc:
-        logger.error(f"MCP tool call failed: {name}", extra={"error": str(exc)})
-        return ToolResult(
-            success=False,
-            payload={"error": f"MCP tool call failed: {exc}"}
-        )
 
 
 # Return predefined tool schemas for LLM function calling
 def get_tool_schemas():
     """Return OpenAI-compatible tool schemas."""
-    schemas = TOOL_SCHEMAS.copy()
-    
-    # Add MCP tools dynamically
-    try:
-        from ...mcp_client.registry import get_mcp_registry
-        registry = get_mcp_registry()
-        if registry.is_initialized():
-            mcp_tools = registry.get_tools()
-            for tool in mcp_tools:
-                # Convert MCP tool to OpenRouter format
-                schema = {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": tool.inputSchema,
-                    },
-                }
-                schemas.append(schema)
-    except Exception as exc:
-        logger.warning(f"Failed to load MCP tools: {exc}")
-    
-    return schemas
+    return TOOL_SCHEMAS.copy()
 
 
 # Route tool calls to appropriate handlers with argument validation and error handling
@@ -305,10 +240,6 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return send_draft(**args)
         if name == "wait":
             return wait(**args)
-        
-        # Handle MCP tools
-        if name.startswith("mcp_"):
-            return _handle_mcp_tool_call(name, args)
 
         logger.warning("unexpected tool", extra={"tool": name})
         return ToolResult(success=False, payload={"error": f"Unknown tool: {name}"})
