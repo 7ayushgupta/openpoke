@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import apiClient from '@/lib/api';
 
 // Popular Server Card Component
 function PopularServerCard({ 
@@ -300,10 +301,9 @@ export default function SettingsModal({
   const loadMcpServers = useCallback(async () => {
     try {
       setLoadingMcp(true);
-      const resp = await fetch('/api/mcp/servers');
-      if (resp.ok) {
-        const data = await resp.json();
-        setMcpServers(data.servers || []);
+      const response = await apiClient.listMcpServers();
+      if (response.ok && response.data) {
+        setMcpServers(response.data.servers || []);
       }
     } catch (err) {
       console.error('Failed to load MCP servers:', err);
@@ -314,10 +314,9 @@ export default function SettingsModal({
 
   const loadMcpTools = useCallback(async () => {
     try {
-      const resp = await fetch('/api/mcp/tools');
-      if (resp.ok) {
-        const data = await resp.json();
-        setMcpTools(data.tools || []);
+      const response = await apiClient.getMcpTools();
+      if (response.ok && response.data) {
+        setMcpTools(response.data.tools || []);
       }
     } catch (err) {
       console.error('Failed to load MCP tools:', err);
@@ -339,13 +338,9 @@ export default function SettingsModal({
         payload.auth_config = { api_key: newServerApiKey };
       }
       
-      const resp = await fetch('/api/mcp/servers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const response = await apiClient.addMcpServer(payload);
       
-      if (resp.ok) {
+      if (response.ok) {
         setNewServerName('');
         setNewServerUrl('');
         setNewServerAuthType('none');
@@ -363,11 +358,9 @@ export default function SettingsModal({
   const removeMcpServer = useCallback(async (serverName: string) => {
     try {
       setLoadingMcp(true);
-      const resp = await fetch(`/api/mcp/servers/${encodeURIComponent(serverName)}`, {
-        method: 'DELETE',
-      });
+      const response = await apiClient.deleteMcpServer(serverName);
       
-      if (resp.ok) {
+      if (response.ok) {
         await loadMcpServers();
         await loadMcpTools();
       }
@@ -467,19 +460,14 @@ export default function SettingsModal({
       setConnectingGmail(true);
       setGmailStatusMessage('');
       const userId = ensureUserId();
-      const resp = await fetch('/api/gmail/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || !data?.ok) {
-        const msg = data?.error || `Failed (${resp.status})`;
+      const response = await apiClient.connectGmail({ userId });
+      if (!response.ok) {
+        const msg = response.error || 'Failed to connect Gmail';
         setGmailStatusMessage(msg);
         return;
       }
-      const url = data?.redirect_url;
-      const connId = data?.connection_request_id || '';
+      const url = response.data?.redirect_url;
+      const connId = response.data?.connection_request_id || '';
       if (connId) {
         setGmailConnId(connId);
         try {
@@ -516,15 +504,9 @@ export default function SettingsModal({
     try {
       setIsRefreshingGmail(true);
       setGmailStatusMessage('Refreshing Gmail status…');
-      const resp = await fetch('/api/gmail/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, connectionRequestId }),
-      });
-      const data = await resp.json().catch(() => ({}));
-
-      if (!resp.ok || !data?.ok) {
-        const message = data?.error || `Failed (${resp.status})`;
+      const response = await apiClient.getGmailStatus();
+      if (!response.ok) {
+        const message = response.error || 'Failed to get Gmail status';
         setGmailConnected(false);
         setGmailProfile(null);
         setGmailEmail('');
@@ -536,12 +518,12 @@ export default function SettingsModal({
         setGmailConnId(connectionRequestId);
       }
 
-      const profileData = data?.profile && typeof data.profile === 'object' ? (data.profile as Record<string, unknown>) : null;
+      const profileData = response.data?.profile && typeof response.data.profile === 'object' ? (response.data.profile as Record<string, unknown>) : null;
       setGmailProfile(profileData);
 
-      const derivedEmail = deriveEmailFromPayload({ email: data?.email, profile: profileData });
-      const email = derivedEmail || (typeof data?.email === 'string' ? data.email : '');
-      const connected = Boolean(data?.connected);
+      const derivedEmail = deriveEmailFromPayload({ email: response.data?.email, profile: profileData });
+      const email = derivedEmail || (typeof response.data?.email === 'string' ? response.data.email : '');
+      const connected = Boolean(response.data?.connected);
 
       setGmailConnected(connected);
       setGmailEmail(email);
@@ -589,15 +571,9 @@ export default function SettingsModal({
       setGmailStatusMessage('Disconnecting Gmail…');
       const userId = readStoredUserId();
       const connectionRequestId = readStoredConnectionRequestId();
-      const resp = await fetch('/api/gmail/disconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, connectionRequestId }),
-      });
-      const data = await resp.json().catch(() => ({}));
-
-      if (!resp.ok || !data?.ok) {
-        const message = data?.error || `Failed (${resp.status})`;
+      const response = await apiClient.disconnectGmail();
+      if (!response.ok) {
+        const message = response.error || 'Failed to disconnect Gmail';
         setGmailStatusMessage(message);
         return;
       }

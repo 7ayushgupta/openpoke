@@ -28,11 +28,12 @@ class ExecutionAgentRuntime:
     MAX_TOOL_ITERATIONS = 8
 
     # Initialize execution agent runtime with settings, tools, and agent instance
-    def __init__(self, agent_name: str):
+    def __init__(self, agent_name: str, user_id: str):
+        self.user_id = user_id
         settings = get_settings()
-        self.agent = ExecutionAgent(agent_name)
+        self.agent = ExecutionAgent(agent_name, user_id=user_id)
         self.model = settings.execution_agent_model
-        self.tool_registry = get_tool_registry(agent_name=agent_name)
+        self.tool_registry = get_tool_registry(agent_name=agent_name, user_id=user_id)
         self.tool_schemas = get_tool_schemas()
 
         # Check API key based on configured provider

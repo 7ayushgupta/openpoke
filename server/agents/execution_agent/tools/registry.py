@@ -40,13 +40,13 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
 
 
 # Return Python callables for executing tools by name
-def get_tool_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:
+def get_tool_registry(agent_name: str, user_id: str = "") -> Dict[str, Callable[..., Any]]:
     """Return Python callables for executing tools by name."""
 
     registry: Dict[str, Callable[..., Any]] = {}
-    registry.update(gmail.build_registry(agent_name))
+    registry.update(gmail.build_registry(agent_name, user_id))
     registry.update(get_task_registry(agent_name))
-    registry.update(triggers.build_registry(agent_name))
+    registry.update(triggers.build_registry(agent_name, user_id))
     registry.update(mcp.build_registry(agent_name))  # Add MCP tools
     return registry
 

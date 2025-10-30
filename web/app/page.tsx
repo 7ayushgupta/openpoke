@@ -8,6 +8,9 @@ import { ChatMessages } from '@/components/chat/ChatMessages';
 import { ErrorBanner } from '@/components/chat/ErrorBanner';
 import { SuccessBanner } from '@/components/chat/SuccessBanner';
 import { useAutoScroll } from '@/components/chat/useAutoScroll';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { useAuth } from '@/contexts/AuthContext';
+import apiClient from '@/lib/api';
 import type { ChatBubble } from '@/components/chat/types';
 
 const POLL_INTERVAL_MS = 1500;
@@ -39,6 +42,7 @@ const toBubbles = (payload: any): ChatBubble[] => {
 
 export default function Page() {
   const { settings, setSettings } = useSettings();
+  const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatBubble[]>([]);
@@ -54,10 +58,10 @@ export default function Page() {
 
   const loadHistory = useCallback(async () => {
     try {
-      const res = await fetch('/api/chat/history', { cache: 'no-store' });
-      if (!res.ok) return;
-      const data = await res.json();
-      setMessages(toBubbles(data));
+      const response = await apiClient.getChatHistory();
+      if (response.ok && response.data) {
+        setMessages(toBubbles(response.data));
+      }
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
       console.error('Failed to load chat history', err);
@@ -78,11 +82,7 @@ export default function Page() {
         const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         
         // Send to server
-        const response = await fetch('/api/timezone', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ timezone: browserTimezone }),
-        });
+        const response = await apiClient.setTimezone(browserTimezone);
         
         if (response.ok) {
           // Update local settings
@@ -129,17 +129,10 @@ export default function Page() {
       });
 
       try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [{ role: 'user', content: trimmed }],
-          }),
-        });
+        const response = await apiClient.sendMessage([{ role: 'user', content: trimmed }]);
 
-        if (!(res.ok || res.status === 202)) {
-          const detail = await res.text();
-          throw new Error(detail || `Request failed (${res.status})`);
+        if (!response.ok) {
+          throw new Error(response.error || 'Request failed');
         }
       } catch (err: any) {
         console.error('Failed to send message', err);
@@ -201,9 +194,9 @@ export default function Page() {
       setSuccess(null);
       setIsWaitingForResponse(false);
       
-      const res = await fetch('/api/chat/history', { method: 'DELETE' });
-      if (!res.ok) {
-        console.error('Failed to clear chat history', res.statusText);
+      const response = await apiClient.clearChatHistory();
+      if (!response.ok) {
+        console.error('Failed to clear chat history', response.error);
         setError('Failed to clear history. Please try again.');
         return;
       }
@@ -241,34 +234,41 @@ export default function Page() {
   const clearSuccess = useCallback(() => setSuccess(null), [setSuccess]);
 
   return (
-    <main className="chat-bg min-h-screen p-4 sm:p-6">
-      <div className="chat-wrap flex flex-col">
-        <ChatHeader onOpenSettings={openSettings} onClearHistory={triggerClearHistory} />
-
-        <div className="card flex-1 overflow-hidden">
-          <ChatMessages
-            messages={messages}
-            isWaitingForResponse={isWaitingForResponse}
-            scrollContainerRef={scrollContainerRef}
-            onScroll={handleScroll}
+    <ProtectedRoute>
+      <main className="chat-bg min-h-screen p-4 sm:p-6">
+        <div className="chat-wrap flex flex-col">
+          <ChatHeader 
+            onOpenSettings={openSettings} 
+            onClearHistory={triggerClearHistory}
+            user={user}
+            onLogout={logout}
           />
 
-          <div className="border-t border-gray-200 p-3">
-            {error && <ErrorBanner message={error} onDismiss={clearError} />}
-            {success && <SuccessBanner message={success} onDismiss={clearSuccess} />}
-
-            <ChatInput
-              value={input}
-              canSubmit={canSubmit}
-              placeholder={inputPlaceholder}
-              onChange={handleInputChange}
-              onSubmit={handleSubmit}
+          <div className="card flex-1 overflow-hidden">
+            <ChatMessages
+              messages={messages}
+              isWaitingForResponse={isWaitingForResponse}
+              scrollContainerRef={scrollContainerRef}
+              onScroll={handleScroll}
             />
-          </div>
-        </div>
 
-        <SettingsModal open={open} onClose={closeSettings} settings={settings} onSave={setSettings} />
-      </div>
-    </main>
+            <div className="border-t border-gray-200 p-3">
+              {error && <ErrorBanner message={error} onDismiss={clearError} />}
+              {success && <SuccessBanner message={success} onDismiss={clearSuccess} />}
+
+              <ChatInput
+                value={input}
+                canSubmit={canSubmit}
+                placeholder={inputPlaceholder}
+                onChange={handleInputChange}
+                onSubmit={handleSubmit}
+              />
+            </div>
+          </div>
+
+          <SettingsModal open={open} onClose={closeSettings} settings={settings} onSave={setSettings} />
+        </div>
+      </main>
+    </ProtectedRoute>
   );
 }

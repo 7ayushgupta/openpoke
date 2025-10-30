@@ -109,9 +109,9 @@ _EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
 
 
 # Create or reuse execution agent and dispatch instructions asynchronously
-def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
+def send_message_to_agent(agent_name: str, instructions: str, user_id: str) -> ToolResult:
     """Send instructions to an execution agent."""
-    roster = get_agent_roster()
+    roster = get_agent_roster(user_id)
     roster.load()
     existing_agents = set(roster.get_agents())
     is_new = agent_name not in existing_agents
@@ -119,7 +119,7 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     if is_new:
         roster.add_agent(agent_name)
 
-    get_execution_agent_logs().record_request(agent_name, instructions)
+    get_execution_agent_logs(user_id).record_request(agent_name, instructions)
 
     action = "Created" if is_new else "Reused"
     logger.info(f"[INTERACTION] {action} execution agent: {agent_name}")
@@ -127,7 +127,7 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
 
     async def _execute_async() -> None:
         try:
-            result = await _EXECUTION_BATCH_MANAGER.execute_agent(agent_name, instructions)
+            result = await _EXECUTION_BATCH_MANAGER.execute_agent(agent_name, instructions, user_id)
             status = "SUCCESS" if result.success else "FAILED"
             logger.info(f"[INTERACTION] Agent '{agent_name}' completed: {status}")
             if result.success:
@@ -156,9 +156,9 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
 
 
 # Send immediate message to user and record in conversation history
-def send_message_to_user(message: str) -> ToolResult:
+def send_message_to_user(message: str, user_id: str) -> ToolResult:
     """Record a user-visible reply in the conversation log."""
-    log = get_conversation_log()
+    log = get_conversation_log(user_id)
     log.record_reply(message)
 
     return ToolResult(
@@ -174,9 +174,10 @@ def send_draft(
     to: str,
     subject: str,
     body: str,
+    user_id: str,
 ) -> ToolResult:
     """Record a draft update in the conversation log for the interaction agent."""
-    log = get_conversation_log()
+    log = get_conversation_log(user_id)
 
     message = f"To: {to}\nSubject: {subject}\n\n{body}"
 
@@ -222,7 +223,7 @@ def get_tool_schemas():
 
 
 # Route tool calls to appropriate handlers with argument validation and error handling
-def handle_tool_call(name: str, arguments: Any) -> ToolResult:
+def handle_tool_call(name: str, arguments: Any, user_id: str) -> ToolResult:
     """Handle tool calls from interaction agent."""
     try:
         if isinstance(arguments, str):
@@ -233,11 +234,11 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return ToolResult(success=False, payload={"error": "Invalid arguments format"})
 
         if name == "send_message_to_agent":
-            return send_message_to_agent(**args)
+            return send_message_to_agent(user_id=user_id, **args)
         if name == "send_message_to_user":
-            return send_message_to_user(**args)
+            return send_message_to_user(user_id=user_id, **args)
         if name == "send_draft":
-            return send_draft(**args)
+            return send_draft(user_id=user_id, **args)
         if name == "wait":
             return wait(**args)
 

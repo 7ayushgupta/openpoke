@@ -1,11 +1,20 @@
 import { useState } from 'react';
 
+interface User {
+  id: string;
+  email: string;
+  provider: string;
+  created_at: string;
+}
+
 interface ChatHeaderProps {
   onOpenSettings: () => void;
   onClearHistory: () => void;
+  user: User | null;
+  onLogout: () => void;
 }
 
-export function ChatHeader({ onOpenSettings, onClearHistory }: ChatHeaderProps) {
+export function ChatHeader({ onOpenSettings, onClearHistory, user, onLogout }: ChatHeaderProps) {
   const [showConfirmClear, setShowConfirmClear] = useState(false);
 
   const handleClearClick = () => {
@@ -25,6 +34,11 @@ export function ChatHeader({ onOpenSettings, onClearHistory }: ChatHeaderProps) 
     <header className="mb-4 flex items-center justify-between">
       <div className="flex items-center">
         <h1 className="text-lg font-semibold">OpenPoke 🌴</h1>
+        {user && (
+          <div className="ml-4 text-sm text-gray-600">
+            Welcome, {user.email}
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <button
@@ -32,6 +46,13 @@ export function ChatHeader({ onOpenSettings, onClearHistory }: ChatHeaderProps) 
           onClick={onOpenSettings}
         >
           Settings
+        </button>
+        
+        <button
+          className="rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+          onClick={onLogout}
+        >
+          Logout
         </button>
         
         {showConfirmClear ? (

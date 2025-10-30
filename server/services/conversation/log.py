@@ -17,7 +17,6 @@ if TYPE_CHECKING:  # pragma: no cover - used for type checkers only
 
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_CONVERSATION_LOG_PATH = _DATA_DIR / "conversation" / "poke_conversation.log"
 
 
 class TranscriptFormatter(Protocol):
@@ -211,11 +210,10 @@ class ConversationLog:
             )
 
 
-_conversation_log = ConversationLog(_CONVERSATION_LOG_PATH)
-
-
-def get_conversation_log() -> ConversationLog:
-    return _conversation_log
+def get_conversation_log(user_id: str) -> ConversationLog:
+    """Get conversation log for a specific user."""
+    conversation_log_path = _DATA_DIR / "users" / user_id / "conversation" / "poke_conversation.log"
+    return ConversationLog(conversation_log_path)
 
 
 __all__ = ["ConversationLog", "get_conversation_log"]

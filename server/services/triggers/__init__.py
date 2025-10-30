@@ -10,11 +10,11 @@ from .store import TriggerStore
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _default_db_path = _DATA_DIR / "triggers.db"
 _trigger_store = TriggerStore(_default_db_path)
-_trigger_service = TriggerService(_trigger_store)
 
 
-def get_trigger_service() -> TriggerService:
-    return _trigger_service
+def get_trigger_service(user_id: str) -> TriggerService:
+    """Get trigger service for a specific user."""
+    return TriggerService(_trigger_store, user_id)
 
 
 __all__ = [

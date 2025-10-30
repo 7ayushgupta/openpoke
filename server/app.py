@@ -12,6 +12,7 @@ from .logging_config import configure_logging, logger
 from .routes import api_router
 from .services import get_important_email_watcher, get_trigger_scheduler
 from .llm_client.client import _log_provider_initialization
+from .migrations.migrate_to_multiuser import run_migration
 
 
 # Register global exception handlers for consistent error responses across the API
@@ -75,6 +76,12 @@ app.include_router(api_router)
 @app.on_event("startup")
 # Initialize background services (trigger scheduler and email watcher) when the app starts
 async def _start_trigger_scheduler() -> None:
+    # Run migration first
+    logger.info("Running multi-user migration...")
+    migration_success = run_migration()
+    if not migration_success:
+        logger.error("Migration failed, but continuing startup")
+    
     scheduler = get_trigger_scheduler()
     await scheduler.start()
     watcher = get_important_email_watcher()

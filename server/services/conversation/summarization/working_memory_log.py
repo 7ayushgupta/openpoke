@@ -14,7 +14,6 @@ from .state import LogEntry, SummaryState
 
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
-_WORKING_MEMORY_LOG_PATH = _DATA_DIR / "conversation" / "poke_working_memory.log"
 
 
 def _encode_payload(payload: str) -> str:
@@ -240,17 +239,10 @@ class WorkingMemoryLog:
         return tag, timestamp, _decode_payload(payload)
 
 
-_working_memory_log: Optional[WorkingMemoryLog] = None
-_factory_lock = threading.Lock()
-
-
-def get_working_memory_log() -> WorkingMemoryLog:
-    global _working_memory_log
-    if _working_memory_log is None:
-        with _factory_lock:
-            if _working_memory_log is None:
-                _working_memory_log = WorkingMemoryLog(_WORKING_MEMORY_LOG_PATH)
-    return _working_memory_log
+def get_working_memory_log(user_id: str) -> WorkingMemoryLog:
+    """Get working memory log for a specific user."""
+    working_memory_log_path = _DATA_DIR / "users" / user_id / "conversation" / "poke_working_memory.log"
+    return WorkingMemoryLog(working_memory_log_path)
 
 
 __all__ = ["WorkingMemoryLog", "get_working_memory_log"]

@@ -7,9 +7,11 @@ from .gmail import router as gmail_router
 from .mcp import router as mcp_router
 from .meta import router as meta_router
 from .admin import router as admin_router
+from .auth import router as auth_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(meta_router)
+api_router.include_router(auth_router)
 api_router.include_router(chat_router)
 api_router.include_router(gmail_router)
 api_router.include_router(mcp_router)

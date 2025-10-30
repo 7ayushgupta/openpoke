@@ -311,7 +311,7 @@ _SCHEMAS: List[Dict[str, Any]] = [
     },
 ]
 
-_LOG_STORE = get_execution_agent_logs()
+# Log store will be initialized per user when needed
 
 
 # Return Gmail tool schemas
@@ -322,9 +322,10 @@ def get_schemas() -> List[Dict[str, Any]]:
 
 
 # Execute a Gmail tool and record the action for the execution agent journal
-def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any], user_id: str) -> Dict[str, Any]:
     """Execute a Gmail tool and record the action for the execution agent journal."""
     from ...logging_config import logger
+    from ...services.execution import get_execution_agent_logs
 
     payload = {k: v for k, v in arguments.items() if v is not None}
     payload_str = json.dumps(payload, ensure_ascii=False, sort_keys=True) if payload else "{}"
@@ -332,19 +333,21 @@ def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -
     logger.info(f"[GMAIL] Executing {tool_name} with user ID: {composio_user_id}")
     logger.debug(f"[GMAIL] Tool arguments: {payload_str}")
     
+    log_store = get_execution_agent_logs(user_id)
+    
     try:
         result = execute_gmail_tool(tool_name, composio_user_id, arguments=payload)
         logger.info(f"[GMAIL] {tool_name} executed successfully")
         logger.debug(f"[GMAIL] Tool result: {result}")
     except Exception as exc:
         logger.error(f"[GMAIL] {tool_name} failed with error: {exc}")
-        _LOG_STORE.record_action(
+        log_store.record_action(
             _GMAIL_AGENT_NAME,
             description=f"{tool_name} failed | args={payload_str} | error={exc}",
         )
         raise
 
-    _LOG_STORE.record_action(
+    log_store.record_action(
         _GMAIL_AGENT_NAME,
         description=f"{tool_name} succeeded | args={payload_str}",
     )
@@ -362,6 +365,7 @@ def gmail_create_draft(
     is_html: Optional[bool] = None,
     thread_id: Optional[str] = None,
     attachment: Optional[Dict[str, Any]] = None,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     from ...logging_config import logger
     
@@ -387,12 +391,13 @@ def gmail_create_draft(
         return {"error": error_msg}
     
     logger.info(f"[GMAIL] Executing GMAIL_CREATE_EMAIL_DRAFT with user ID: {composio_user_id}")
-    return _execute("GMAIL_CREATE_EMAIL_DRAFT", composio_user_id, arguments)
+    return _execute("GMAIL_CREATE_EMAIL_DRAFT", composio_user_id, arguments, user_id)
 
 
 # Send a previously created Gmail draft using Composio
 def gmail_execute_draft(
     draft_id: str,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     from ...logging_config import logger
     
@@ -407,7 +412,7 @@ def gmail_execute_draft(
         return {"error": error_msg}
     
     logger.info(f"[GMAIL] Executing GMAIL_SEND_DRAFT with user ID: {composio_user_id}")
-    return _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments)
+    return _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments, user_id)
 
 
 # Forward an existing Gmail message with optional additional context
@@ -415,6 +420,7 @@ def gmail_forward_email(
     message_id: str,
     recipient_email: str,
     additional_text: Optional[str] = None,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     arguments = {
         "message_id": message_id,
@@ -424,7 +430,7 @@ def gmail_forward_email(
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_FORWARD_MESSAGE", composio_user_id, arguments)
+    return _execute("GMAIL_FORWARD_MESSAGE", composio_user_id, arguments, user_id)
 
 
 # Send a reply within an existing Gmail thread via Composio
@@ -437,6 +443,7 @@ def gmail_reply_to_thread(
     extra_recipients: Optional[List[str]] = None,
     is_html: Optional[bool] = None,
     attachment: Optional[Dict[str, Any]] = None,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     arguments = {
         "thread_id": thread_id,
@@ -451,18 +458,19 @@ def gmail_reply_to_thread(
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_REPLY_TO_THREAD", composio_user_id, arguments)
+    return _execute("GMAIL_REPLY_TO_THREAD", composio_user_id, arguments, user_id)
 
 
 # Delete a specific Gmail draft using the Composio Gmail integration
 def gmail_delete_draft(
     draft_id: str,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     arguments = {"draft_id": draft_id}
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_DELETE_DRAFT", composio_user_id, arguments)
+    return _execute("GMAIL_DELETE_DRAFT", composio_user_id, arguments, user_id)
 
 
 def gmail_get_contacts(
@@ -470,6 +478,7 @@ def gmail_get_contacts(
     person_fields: Optional[str] = None,
     include_other_contacts: Optional[bool] = None,
     page_token: Optional[str] = None,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     arguments = {
         "resource_name": resource_name,
@@ -480,7 +489,7 @@ def gmail_get_contacts(
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_GET_CONTACTS", composio_user_id, arguments)
+    return _execute("GMAIL_GET_CONTACTS", composio_user_id, arguments, user_id)
 
 
 def gmail_get_people(
@@ -490,6 +499,7 @@ def gmail_get_people(
     page_token: Optional[str] = None,
     sync_token: Optional[str] = None,
     other_contacts: Optional[bool] = None,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     arguments = {
         "resource_name": resource_name,
@@ -502,13 +512,14 @@ def gmail_get_people(
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_GET_PEOPLE", composio_user_id, arguments)
+    return _execute("GMAIL_GET_PEOPLE", composio_user_id, arguments, user_id)
 
 
 def gmail_list_drafts(
     max_results: Optional[int] = None,
     page_token: Optional[str] = None,
     verbose: Optional[bool] = None,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     arguments = {
         "max_results": max_results,
@@ -518,7 +529,7 @@ def gmail_list_drafts(
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_LIST_DRAFTS", composio_user_id, arguments)
+    return _execute("GMAIL_LIST_DRAFTS", composio_user_id, arguments, user_id)
 
 
 def gmail_search_people(
@@ -527,6 +538,7 @@ def gmail_search_people(
     page_size: Optional[int] = None,
     other_contacts: Optional[bool] = None,
     page_token: Optional[str] = None,
+    user_id: str = "",
 ) -> Dict[str, Any]:
     arguments: Dict[str, Any] = {
         "query": query,
@@ -540,11 +552,11 @@ def gmail_search_people(
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_SEARCH_PEOPLE", composio_user_id, arguments)
+    return _execute("GMAIL_SEARCH_PEOPLE", composio_user_id, arguments, user_id)
 
 
 # Return Gmail tool callables
-def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
+def build_registry(agent_name: str, user_id: str = "") -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
     """Return Gmail tool callables."""
     
     return {

@@ -49,6 +49,7 @@ class ExecutionBatchManager:
         self,
         agent_name: str,
         instructions: str,
+        user_id: str,
         request_id: Optional[str] = None,
     ) -> ExecutionResult:
         """Execute an agent asynchronously and buffer the result for batch dispatch."""
@@ -65,7 +66,7 @@ class ExecutionBatchManager:
 
         try:
             logger.info(f"[{agent_name}] Execution started")
-            runtime = ExecutionAgentRuntime(agent_name=agent_name)
+            runtime = ExecutionAgentRuntime(agent_name=agent_name, user_id=user_id)
             result = await asyncio.wait_for(
                 runtime.execute(instructions),
                 timeout=self.timeout_seconds,

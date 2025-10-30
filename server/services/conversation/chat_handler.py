@@ -20,7 +20,7 @@ def _extract_latest_user_message(payload: ChatRequest) -> Optional[ChatMessage]:
 
 
 # Process incoming chat requests by routing them to the interaction agent runtime
-async def handle_chat_request(payload: ChatRequest) -> Union[PlainTextResponse, JSONResponse]:
+async def handle_chat_request(payload: ChatRequest, user_id: str) -> Union[PlainTextResponse, JSONResponse]:
     """Handle a chat request using the InteractionAgentRuntime."""
 
     # Extract user message
@@ -37,7 +37,7 @@ async def handle_chat_request(payload: ChatRequest) -> Union[PlainTextResponse, 
     admin_service.record_interaction_activity()
 
     try:
-        runtime = InteractionAgentRuntime()
+        runtime = InteractionAgentRuntime(user_id=user_id)
     except ValueError as ve:
         # Missing API key error
         logger.error("LLM configuration error", extra={

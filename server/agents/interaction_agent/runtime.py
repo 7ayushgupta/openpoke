@@ -47,12 +47,13 @@ class InteractionAgentRuntime:
     MAX_TOOL_ITERATIONS = 8
 
     # Initialize interaction agent runtime with settings and service dependencies
-    def __init__(self) -> None:
+    def __init__(self, user_id: str) -> None:
+        self.user_id = user_id
         settings = get_settings()
         self.model = settings.interaction_agent_model
         self.settings = settings
-        self.conversation_log = get_conversation_log()
-        self.working_memory_log = get_working_memory_log()
+        self.conversation_log = get_conversation_log(user_id)
+        self.working_memory_log = get_working_memory_log(user_id)
         self.tool_schemas = get_tool_schemas()
 
         # Check API key based on configured provider
@@ -426,7 +427,7 @@ class InteractionAgentRuntime:
         try:
             self._log_tool_invocation(tool_call, stage="start")
             logger.info(f"[INTERACTION] Calling handle_tool_call for {tool_call.name}")
-            result = handle_tool_call(tool_call.name, tool_call.arguments)
+            result = handle_tool_call(tool_call.name, tool_call.arguments, self.user_id)
             logger.info(f"[INTERACTION] Tool {tool_call.name} returned result: success={result.success}")
             if result.payload:
                 logger.debug(f"[INTERACTION] Tool {tool_call.name} payload: {result.payload}")

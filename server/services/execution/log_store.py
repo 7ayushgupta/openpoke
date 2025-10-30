@@ -13,7 +13,6 @@ from ...utils.timezones import now_in_user_timezone
 
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_EXECUTION_LOG_DIR = _DATA_DIR / "execution_agents"
 
 
 def _slugify(name: str) -> str:
@@ -42,15 +41,17 @@ _ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
 class ExecutionAgentLogStore:
     """Append-only journal for execution agents with XML-style tags."""
 
-    def __init__(self, base_dir: Path):
+    def __init__(self, base_dir: Path, user_id: str):
         self._base_dir = base_dir
+        self._user_id = user_id
+        self._user_data_dir = base_dir / "users" / user_id / "execution_agents"
         self._locks: dict[str, threading.Lock] = {}
         self._global_lock = threading.Lock()
         self._ensure_directory()
 
     def _ensure_directory(self) -> None:
         try:
-            self._base_dir.mkdir(parents=True, exist_ok=True)
+            self._user_data_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
             logger.warning(f"Failed to create directory: {exc}")
 
@@ -64,7 +65,7 @@ class ExecutionAgentLogStore:
 
     def _log_path(self, agent_name: str) -> Path:
         """Get log file path for an agent."""
-        return self._base_dir / f"{_slugify(agent_name)}.log"
+        return self._user_data_dir / f"{_slugify(agent_name)}.log"
 
     def _append(self, agent_name: str, tag: str, payload: str) -> None:
         """Append an entry with the given tag."""
@@ -161,7 +162,7 @@ class ExecutionAgentLogStore:
     def list_agents(self) -> list[str]:
         """List all agents with logs."""
         try:
-            return sorted(path.stem for path in self._base_dir.glob("*.log"))
+            return sorted(path.stem for path in self._user_data_dir.glob("*.log"))
         except Exception as exc:
             logger.error(f"Failed to list agents: {exc}")
             return []
@@ -169,16 +170,13 @@ class ExecutionAgentLogStore:
     def clear_all(self) -> None:
         """Clear all execution agent logs."""
         try:
-            for log_file in self._base_dir.glob("*.log"):
+            for log_file in self._user_data_dir.glob("*.log"):
                 log_file.unlink()
             logger.info("Cleared all execution agent logs")
         except Exception as exc:
             logger.error(f"Failed to clear execution logs: {exc}")
 
 
-_execution_agent_logs = ExecutionAgentLogStore(_EXECUTION_LOG_DIR)
-
-
-def get_execution_agent_logs() -> ExecutionAgentLogStore:
-    """Get the singleton log store instance."""
-    return _execution_agent_logs
+def get_execution_agent_logs(user_id: str) -> ExecutionAgentLogStore:
+    """Get execution agent log store for a specific user."""
+    return ExecutionAgentLogStore(_DATA_DIR, user_id)

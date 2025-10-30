@@ -93,6 +93,15 @@ class Settings(BaseModel):
         default_factory=lambda: _env_json_list("OPENPOKE_MCP_SERVERS", [])
     )
 
+    # Multi-user settings
+    default_user_id: str = Field(default=os.getenv("DEFAULT_USER_ID", "admin"))
+
+    # OAuth configuration
+    oauth_google_client_id: Optional[str] = Field(default=os.getenv("OAUTH_GOOGLE_CLIENT_ID"))
+    oauth_google_client_secret: Optional[str] = Field(default=os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"))
+    oauth_redirect_uri: str = Field(default=os.getenv("OAUTH_REDIRECT_URI", "http://localhost:3000/api/v1/auth/callback"))
+    jwt_secret_key: Optional[str] = Field(default=os.getenv("JWT_SECRET_KEY"))
+
     @property
     def cors_allow_origins(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""

@@ -37,6 +37,7 @@ class TriggerStore:
         schema_sql = """
         CREATE TABLE IF NOT EXISTS triggers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
             agent_name TEXT NOT NULL,
             payload TEXT NOT NULL,
             start_time TEXT,
@@ -53,10 +54,15 @@ class TriggerStore:
         CREATE INDEX IF NOT EXISTS idx_triggers_agent_next
         ON triggers (agent_name, next_trigger);
         """
+        user_index_sql = """
+        CREATE INDEX IF NOT EXISTS idx_triggers_user
+        ON triggers (user_id);
+        """
         with self._lock, self._connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute(schema_sql)
             conn.execute(index_sql)
+            conn.execute(user_index_sql)
 
     def insert(self, payload: Dict[str, Any]) -> int:
         with self._lock, self._connect() as conn:
@@ -67,37 +73,38 @@ class TriggerStore:
             trigger_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             return int(trigger_id)
 
-    def fetch_one(self, trigger_id: int, agent_name: str) -> Optional[TriggerRecord]:
+    def fetch_one(self, trigger_id: int, agent_name: str, user_id: str) -> Optional[TriggerRecord]:
         with self._lock, self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM triggers WHERE id = ? AND agent_name = ?",
-                (trigger_id, agent_name),
+                "SELECT * FROM triggers WHERE id = ? AND agent_name = ? AND user_id = ?",
+                (trigger_id, agent_name, user_id),
             ).fetchone()
         return self._row_to_record(row) if row else None
 
-    def update(self, trigger_id: int, agent_name: str, fields: Dict[str, Any]) -> bool:
+    def update(self, trigger_id: int, agent_name: str, user_id: str, fields: Dict[str, Any]) -> bool:
         if not fields:
             return False
         assignments = ", ".join(f"{key} = :{key}" for key in fields.keys())
         sql = (
             f"UPDATE triggers SET {assignments}, updated_at = :updated_at"
-            " WHERE id = :trigger_id AND agent_name = :agent_name"
+            " WHERE id = :trigger_id AND agent_name = :agent_name AND user_id = :user_id"
         )
         payload = {
             **fields,
             "updated_at": to_storage_timestamp(utc_now()),
             "trigger_id": trigger_id,
             "agent_name": agent_name,
+            "user_id": user_id,
         }
         with self._lock, self._connect() as conn:
             cursor = conn.execute(sql, payload)
             return cursor.rowcount > 0
 
-    def list_for_agent(self, agent_name: str) -> List[TriggerRecord]:
+    def list_for_agent(self, agent_name: str, user_id: str) -> List[TriggerRecord]:
         with self._lock, self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM triggers WHERE agent_name = ? ORDER BY next_trigger IS NULL, next_trigger",
-                (agent_name,),
+                "SELECT * FROM triggers WHERE agent_name = ? AND user_id = ? ORDER BY next_trigger IS NULL, next_trigger",
+                (agent_name, user_id),
             ).fetchall()
         return [self._row_to_record(row) for row in rows]
 

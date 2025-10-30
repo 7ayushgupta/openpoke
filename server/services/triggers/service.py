@@ -26,8 +26,9 @@ MISSED_TRIGGER_GRACE_PERIOD = timedelta(minutes=5)
 class TriggerService:
     """High-level trigger management with recurrence awareness."""
 
-    def __init__(self, store: TriggerStore):
+    def __init__(self, store: TriggerStore, user_id: str):
         self._store = store
+        self._user_id = user_id
 
     def create_trigger(
         self,
@@ -51,6 +52,7 @@ class TriggerService:
         )
         timestamp = to_storage_timestamp(now)
         record: Dict[str, Any] = {
+            "user_id": self._user_id,
             "agent_name": agent_name,
             "payload": payload,
             "start_time": to_storage_timestamp(start_dt_local),
@@ -63,7 +65,7 @@ class TriggerService:
             "updated_at": timestamp,
         }
         trigger_id = self._store.insert(record)
-        created = self._store.fetch_one(trigger_id, agent_name)
+        created = self._store.fetch_one(trigger_id, agent_name, self._user_id)
         if not created:  # pragma: no cover - defensive
             raise RuntimeError("Failed to load trigger after insert")
         return created
@@ -181,7 +183,7 @@ class TriggerService:
         return self._store.fetch_one(trigger_id, agent_name) if updated else existing
 
     def list_triggers(self, *, agent_name: str) -> List[TriggerRecord]:
-        return self._store.list_for_agent(agent_name)
+        return self._store.list_for_agent(agent_name, self._user_id)
 
     def get_due_triggers(
         self, *, before: datetime, agent_name: Optional[str] = None

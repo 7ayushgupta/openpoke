@@ -11,16 +11,26 @@ from ...logging_config import logger
 class AgentRoster:
     """Simple roster that stores agent names in a JSON file."""
 
-    def __init__(self, roster_path: Path):
+    def __init__(self, roster_path: Path, user_id: str):
         self._roster_path = roster_path
+        self._user_id = user_id
+        self._user_roster_path = roster_path / "users" / user_id / "execution_agents" / "roster.json"
         self._agents: list[str] = []
+        self._ensure_user_directory()
         self.load()
+
+    def _ensure_user_directory(self) -> None:
+        """Ensure user directory exists."""
+        try:
+            self._user_roster_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            logger.warning(f"Failed to create user directory: {exc}")
 
     def load(self) -> None:
         """Load agent names from roster.json."""
-        if self._roster_path.exists():
+        if self._user_roster_path.exists():
             try:
-                with open(self._roster_path, 'r') as f:
+                with open(self._user_roster_path, 'r') as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         self._agents = [str(name) for name in data]
@@ -38,10 +48,10 @@ class AgentRoster:
 
         for attempt in range(max_retries):
             try:
-                self._roster_path.parent.mkdir(parents=True, exist_ok=True)
+                self._user_roster_path.parent.mkdir(parents=True, exist_ok=True)
 
                 # Open file and acquire exclusive lock
-                with open(self._roster_path, 'w') as f:
+                with open(self._user_roster_path, 'w') as f:
                     fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     try:
                         json.dump(self._agents, f, indent=2)
@@ -74,19 +84,16 @@ class AgentRoster:
         """Clear the agent roster."""
         self._agents = []
         try:
-            if self._roster_path.exists():
-                self._roster_path.unlink()
+            if self._user_roster_path.exists():
+                self._user_roster_path.unlink()
             logger.info("Cleared agent roster")
         except Exception as exc:
             logger.warning(f"Failed to clear roster.json: {exc}")
 
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_ROSTER_PATH = _DATA_DIR / "execution_agents" / "roster.json"
-
-_agent_roster = AgentRoster(_ROSTER_PATH)
 
 
-def get_agent_roster() -> AgentRoster:
-    """Get the singleton roster instance."""
-    return _agent_roster
+def get_agent_roster(user_id: str) -> AgentRoster:
+    """Get agent roster for a specific user."""
+    return AgentRoster(_DATA_DIR, user_id)

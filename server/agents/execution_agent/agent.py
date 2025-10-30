@@ -36,6 +36,7 @@ class ExecutionAgent:
     def __init__(
         self,
         name: str,
+        user_id: str,
         conversation_limit: Optional[int] = None
     ):
         """
@@ -43,11 +44,13 @@ class ExecutionAgent:
 
         Args:
             name: Human-readable agent name (e.g., 'conversation with keith')
+            user_id: User ID for data isolation
             conversation_limit: Optional limit on past conversations to include (None = all)
         """
         self.name = name
+        self.user_id = user_id
         self.conversation_limit = conversation_limit
-        self._log_store = get_execution_agent_logs()
+        self._log_store = get_execution_agent_logs(user_id)
 
     # Generate system prompt template with agent name and purpose derived from name
     def build_system_prompt(self) -> str:
