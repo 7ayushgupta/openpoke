@@ -20,13 +20,14 @@ def build_system_prompt() -> str:
 def prepare_message_with_history(
     latest_text: str,
     transcript: str,
+    user_id: str,
     message_type: str = "user",
 ) -> List[Dict[str, str]]:
     """Compose a message that bundles history, roster, and the latest turn."""
     sections: List[str] = []
 
     sections.append(_render_conversation_history(transcript))
-    sections.append(f"<active_agents>\n{_render_active_agents()}\n</active_agents>")
+    sections.append(f"<active_agents>\n{_render_active_agents(user_id)}\n</active_agents>")
     sections.append(_render_current_turn(latest_text, message_type))
 
     content = "\n\n".join(sections)
@@ -42,8 +43,8 @@ def _render_conversation_history(transcript: str) -> str:
 
 
 # Format currently active execution agents into XML tags for LLM awareness
-def _render_active_agents() -> str:
-    roster = get_agent_roster()
+def _render_active_agents(user_id: str) -> str:
+    roster = get_agent_roster(user_id)
     roster.load()
     agents = roster.get_agents()
 

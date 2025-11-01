@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Set
 
-from ..agents.execution_agent.batch_manager import ExecutionBatchManager
 from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
 from .triggers import TriggerRecord
@@ -95,7 +94,8 @@ class TriggerScheduler:
                     "scheduled_for": trigger.next_trigger,
                 },
             )
-            execution_manager = ExecutionBatchManager()
+            from ..agents.interaction_agent.tools import get_execution_batch_manager
+            execution_manager = get_execution_batch_manager()
             result = await execution_manager.execute_agent(
                 trigger.agent_name,
                 instructions,

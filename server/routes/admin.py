@@ -1,32 +1,50 @@
 """Admin API routes for dashboard status."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from ..services.admin import get_admin_status_service
 from ..services.execution.roster import get_agent_roster
-from ..agents.execution_agent.batch_manager import ExecutionBatchManager
+from ..agents.interaction_agent.tools import get_execution_batch_manager
 from ..logging_config import logger
+from ..middleware.auth import get_current_user
+from ..models.auth import User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/status")
-async def get_admin_status():
-    """Get admin dashboard status including interaction and execution agent statistics."""
+async def get_admin_status(
+    current_user: User = Depends(get_current_user)
+):
+    """Get admin dashboard status including interaction and execution agent statistics.
+    
+    Requires authentication. Admin users only.
+    """
+    # Check if user is admin
+    if current_user.id != "admin":
+        logger.warning(
+            f"Unauthorized admin access attempt by user {current_user.id}",
+            extra={"user_id": current_user.id, "endpoint": "/admin/status"}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
     try:
         admin_service = get_admin_status_service()
         
         # Get interaction agent status
         interaction_status = admin_service.get_interaction_agent_status()
         
-        # Get execution agent roster
-        roster = get_agent_roster()
+        # Get execution agent roster (user-scoped for security)
+        roster = get_agent_roster(current_user.id)
         roster.load()
         all_agents = roster.get_agents()
         
         # Get currently running execution agents from batch manager
-        batch_manager = ExecutionBatchManager()
+        batch_manager = get_execution_batch_manager()
         pending_executions = batch_manager.get_pending_executions()
         
         # Format running agents data
@@ -52,7 +70,8 @@ async def get_admin_status():
             }
         }
         
-        logger.debug("Admin status requested", extra={
+        logger.info("Admin status accessed", extra={
+            "user_id": current_user.id,
             "interaction_status": interaction_status["status"],
             "running_count": len(pending_executions),
             "total_roster": len(all_agents)

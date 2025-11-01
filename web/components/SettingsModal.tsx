@@ -491,15 +491,9 @@ export default function SettingsModal({
   }, [ensureUserId]);
 
   const refreshGmailStatus = useCallback(async () => {
-    const userId = readStoredUserId();
     const connectionRequestId = readStoredConnectionRequestId();
-    if (!userId && !connectionRequestId) {
-      setGmailConnected(false);
-      setGmailProfile(null);
-      setGmailEmail('');
-      setGmailStatusMessage('Connect Gmail to get started.');
-      return;
-    }
+    
+    // No need to check userId - backend uses authenticated user from JWT token
 
     try {
       setIsRefreshingGmail(true);
@@ -529,20 +523,20 @@ export default function SettingsModal({
       setGmailEmail(email);
 
       if (connected) {
-        const source = typeof data?.profile_source === 'string' ? data.profile_source : '';
+        const source = typeof response.data?.profile_source === 'string' ? response.data.profile_source : '';
         const sourceNote = source === 'fetched' ? 'Verified moments ago.' : source === 'cache' ? 'Loaded from cache.' : '';
         const message = email ? `Connected as ${email}` : 'Gmail connected.';
         setGmailStatusMessage(sourceNote ? `${message} ${sourceNote}` : message);
         try {
           localStorage.setItem('gmail_connected', 'true');
           if (email) localStorage.setItem('gmail_email', email);
-          if (typeof data?.user_id === 'string' && data.user_id) {
-            localStorage.setItem('openpoke_user_id', data.user_id);
+          if (typeof response.data?.user_id === 'string' && response.data.user_id) {
+            localStorage.setItem('openpoke_user_id', response.data.user_id);
           }
         } catch {}
       } else {
-        const statusText = typeof data?.status === 'string' && data.status && data.status !== 'UNKNOWN'
-          ? `Status: ${data.status}`
+        const statusText = typeof response.data?.status === 'string' && response.data.status && response.data.status !== 'UNKNOWN'
+          ? `Status: ${response.data.status}`
           : 'Not connected yet.';
         setGmailStatusMessage(statusText);
         try {

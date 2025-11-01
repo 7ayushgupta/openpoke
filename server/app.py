@@ -1,18 +1,46 @@
 from __future__ import annotations
 
 import json
+import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import get_settings
 from .logging_config import configure_logging, logger
 from .routes import api_router
-from .services import get_important_email_watcher, get_trigger_scheduler
+from .services import get_watcher_manager, get_trigger_scheduler
 from .llm_client.client import _log_provider_initialization
 from .migrations.migrate_to_multiuser import run_migration
+
+
+class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
+    """Redirect HTTP to HTTPS in production (when behind a reverse proxy)."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Check if we're in production and request came via HTTP
+        env = os.getenv("ENVIRONMENT", "development")
+        
+        # Only redirect in production
+        if env == "production":
+            # Check X-Forwarded-Proto header (set by reverse proxy)
+            forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
+            
+            # If request came via HTTP, redirect to HTTPS
+            if forwarded_proto == "http":
+                url = request.url.replace(scheme="https")
+                logger.info(f"Redirecting HTTP to HTTPS: {request.url} -> {url}")
+                return JSONResponse(
+                    status_code=status.HTTP_301_MOVED_PERMANENTLY,
+                    content={"detail": "Redirecting to HTTPS"},
+                    headers={"Location": str(url)}
+                )
+        
+        return await call_next(request)
 
 
 # Register global exception handlers for consistent error responses across the API
@@ -28,7 +56,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(request: Request, exc: HTTPException):
         logger.debug(
-            "http error",
+            f"http error: {exc.status_code} {exc.detail} at {request.url}",
             extra={"detail": exc.detail, "status": exc.status_code, "path": str(request.url)},
         )
         detail = exc.detail
@@ -45,56 +73,74 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
 
-configure_logging()
-_settings = get_settings()
-
-# Log startup banner and LLM provider configuration
-logger.info("🚀 Starting OpenPoke Server...")
-logger.info(f"📦 Version: {_settings.app_version}")
-logger.info(f"🌐 Server: {_settings.server_host}:{_settings.server_port}")
-_log_provider_initialization()
-
-app = FastAPI(
-    title=_settings.app_name,
-    version=_settings.app_version,
-    docs_url=_settings.resolved_docs_url,
-    redoc_url=None,
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_settings.cors_allow_origins,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-register_exception_handlers(app)
-app.include_router(api_router)
-
-
-@app.on_event("startup")
-# Initialize background services (trigger scheduler and email watcher) when the app starts
-async def _start_trigger_scheduler() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan with startup and shutdown logic."""
+    # Startup
+    logger.info("🚀 Starting OpenPoke Server...")
+    _settings = get_settings()
+    logger.info(f"📦 Version: {_settings.app_version}")
+    logger.info(f"🌐 Server: {_settings.server_host}:{_settings.server_port}")
+    _log_provider_initialization()
+    
     # Run migration first
     logger.info("Running multi-user migration...")
     migration_success = run_migration()
     if not migration_success:
         logger.error("Migration failed, but continuing startup")
     
+    # Start background services
     scheduler = get_trigger_scheduler()
     await scheduler.start()
-    watcher = get_important_email_watcher()
-    await watcher.start()
-
-
-@app.on_event("shutdown")
-# Gracefully shutdown background services when the app stops
-async def _stop_trigger_scheduler() -> None:
-    scheduler = get_trigger_scheduler()
+    
+    # Start multi-user Gmail watcher manager
+    watcher_manager = get_watcher_manager()
+    await watcher_manager.start()
+    
+    logger.info("✅ OpenPoke Server startup complete")
+    
+    yield
+    
+    # Shutdown
+    logger.info("🛑 Shutting down OpenPoke Server...")
     await scheduler.stop()
-    watcher = get_important_email_watcher()
-    await watcher.stop()
+    await watcher_manager.stop()
+    
+    # Close HTTP client connection pool
+    from .llm_client.client import _close_http_client
+    await _close_http_client()
+    
+    logger.info("✅ OpenPoke Server shutdown complete")
+
+
+configure_logging()
+_settings = get_settings()
+
+app = FastAPI(
+    title=_settings.app_name,
+    version=_settings.app_version,
+    docs_url=_settings.resolved_docs_url,
+    redoc_url=None,
+    lifespan=lifespan,
+)
+
+# Add HTTPS redirect middleware (only active in production)
+app.add_middleware(HTTPSRedirectMiddleware)
+
+# Configure CORS with secure settings
+logger.info(f"🔒 CORS configured for origins: {_settings.cors_allow_origins}")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings.cors_allow_origins,
+    allow_credentials=True,  # Enable credentials (cookies, authorization headers)
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # Be specific about methods
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],  # Be specific about headers
+    expose_headers=["Content-Length", "X-Request-ID"],
+    max_age=600,  # Cache preflight requests for 10 minutes
+)
+
+register_exception_handlers(app)
+app.include_router(api_router)
 
 
 __all__ = ["app"]

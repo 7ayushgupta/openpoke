@@ -49,7 +49,6 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    logger.debug(f"Authenticated user: {user.email} ({user.id})")
     return user
 
 
@@ -104,7 +103,6 @@ async def get_user_from_header(authorization: Optional[str] = Header(None)) -> U
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    logger.debug(f"Authenticated user: {user.email} ({user.id})")
     return user
 
 

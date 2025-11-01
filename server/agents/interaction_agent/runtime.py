@@ -44,10 +44,10 @@ class _LoopSummary:
 class InteractionAgentRuntime:
     """Manages the interaction agent's request processing."""
 
-    MAX_TOOL_ITERATIONS = 8
-
     # Initialize interaction agent runtime with settings and service dependencies
     def __init__(self, user_id: str) -> None:
+        logger.info(f"[INTERACTION] Initializing InteractionAgentRuntime for user: {user_id}")
+        
         self.user_id = user_id
         settings = get_settings()
         self.model = settings.interaction_agent_model
@@ -55,26 +55,35 @@ class InteractionAgentRuntime:
         self.conversation_log = get_conversation_log(user_id)
         self.working_memory_log = get_working_memory_log(user_id)
         self.tool_schemas = get_tool_schemas()
+        self.max_tool_iterations = settings.max_tool_iterations
 
         # Check API key based on configured provider
         from ...llm_client.client import _get_provider
         provider = _get_provider()
         
+        logger.debug(f"[INTERACTION] Using LLM provider: {provider}, model: {self.model}")
+        
         if provider == "openai":
             self.api_key = settings.openai_api_key
             if not self.api_key:
+                logger.error("[INTERACTION] OpenAI API key not configured")
                 raise ValueError(
                     "OpenAI API key not configured. Set OPENAI_API_KEY environment variable."
                 )
+            logger.debug("[INTERACTION] OpenAI API key configured")
         else:  # openrouter
             self.api_key = settings.openrouter_api_key
             if not self.api_key:
+                logger.error("[INTERACTION] OpenRouter API key not configured")
                 raise ValueError(
                     "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
                 )
+            logger.debug("[INTERACTION] OpenRouter API key configured")
         
         # Initialize MCP registry if configured
         self._initialize_mcp_registry()
+        
+        logger.info(f"[INTERACTION] InteractionAgentRuntime initialized successfully for user: {user_id}")
 
     def _initialize_mcp_registry(self) -> None:
         """Initialize MCP registry with configured servers."""
@@ -125,7 +134,7 @@ class InteractionAgentRuntime:
 
             system_prompt = build_system_prompt()
             messages = prepare_message_with_history(
-                user_message, transcript_before, message_type="user"
+                user_message, transcript_before, self.user_id, message_type="user"
             )
 
             logger.info(f"[INTERACTION] Starting interaction loop with {len(messages)} messages")
@@ -145,8 +154,9 @@ class InteractionAgentRuntime:
             )
 
         except Exception as exc:
+            import traceback
             logger.error(
-                "Interaction agent failed", 
+                f"Interaction agent failed: {type(exc).__name__}: {str(exc)}", 
                 extra={
                     "error": str(exc),
                     "error_type": type(exc).__name__,
@@ -155,6 +165,7 @@ class InteractionAgentRuntime:
                     "model": self.model
                 }
             )
+            logger.debug(f"Traceback: {traceback.format_exc()}")
             return InteractionResult(
                 success=False,
                 response="",
@@ -171,7 +182,7 @@ class InteractionAgentRuntime:
 
             system_prompt = build_system_prompt()
             messages = prepare_message_with_history(
-                agent_message, transcript_before, message_type="agent"
+                agent_message, transcript_before, self.user_id, message_type="agent"
             )
 
             logger.info("Processing execution agent results")
@@ -217,15 +228,15 @@ class InteractionAgentRuntime:
         logger.info(
             "Starting interaction loop",
             extra={
-                "max_iterations": self.MAX_TOOL_ITERATIONS,
+                "max_iterations": self.max_tool_iterations,
                 "initial_message_count": len(messages),
                 "system_prompt_length": len(system_prompt)
             }
         )
 
-        for iteration in range(self.MAX_TOOL_ITERATIONS):
+        for iteration in range(self.max_tool_iterations):
             logger.debug(
-                f"Interaction loop iteration {iteration + 1}/{self.MAX_TOOL_ITERATIONS}",
+                f"Interaction loop iteration {iteration + 1}/{self.max_tool_iterations}",
                 extra={"iteration": iteration + 1, "message_count": len(messages)}
             )
             

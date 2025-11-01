@@ -16,6 +16,33 @@ class LLMError(RuntimeError):
     """Raised when an LLM API request fails."""
 
 
+# Shared HTTP client with connection pooling
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Get or create the shared HTTP client with connection pooling."""
+    global _http_client
+    if _http_client is None:
+        settings = get_settings()
+        _http_client = httpx.AsyncClient(
+            timeout=60.0,
+            limits=httpx.Limits(
+                max_keepalive_connections=settings.http_client_max_keepalive,
+                max_connections=settings.http_client_max_connections,
+            ),
+        )
+    return _http_client
+
+
+async def _close_http_client() -> None:
+    """Close the shared HTTP client. Should be called on application shutdown."""
+    global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
+
+
 def _get_provider() -> str:
     """Get the configured LLM provider."""
     settings = get_settings()
@@ -139,49 +166,43 @@ async def _openai_request(
         }
     )
 
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=60.0,
-            )
-            logger.debug(
-                "OpenAI API response received",
-                extra={
-                    "status_code": response.status_code,
-                    "response_size": len(response.content),
-                    "model": normalized_model
-                }
-            )
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                logger.error(
-                    "OpenAI API returned error status",
-                    extra={
-                        "status_code": exc.response.status_code,
-                        "model": normalized_model,
-                        "response_text": exc.response.text[:500]
-                    }
-                )
-                _handle_response_error(exc, "openai")
-            return response.json()
-        except httpx.HTTPStatusError as exc:
-            _handle_response_error(exc, "openai")
-        except httpx.HTTPError as exc:
-            logger.error(
-                "OpenAI HTTP error",
-                extra={
-                    "error": str(exc),
-                    "model": normalized_model,
-                    "url": url
-                }
-            )
-            raise LLMError(f"OpenAI request failed: {exc}") from exc
-
-    raise LLMError("OpenAI request failed: unknown error")
+    client = _get_http_client()
+    try:
+        response = await client.post(
+            url,
+            headers=headers,
+            json=payload,
+        )
+        logger.debug(
+            "OpenAI API response received",
+            extra={
+                "status_code": response.status_code,
+                "response_size": len(response.content),
+                "model": normalized_model
+            }
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "OpenAI API returned error status",
+            extra={
+                "status_code": exc.response.status_code,
+                "model": normalized_model,
+                "response_text": exc.response.text[:500]
+            }
+        )
+        _handle_response_error(exc, "openai")
+    except httpx.HTTPError as exc:
+        logger.error(
+            "OpenAI HTTP error",
+            extra={
+                "error": str(exc),
+                "model": normalized_model,
+                "url": url
+            }
+        )
+        raise LLMError(f"OpenAI request failed: {exc}") from exc
 
 
 async def _openrouter_request(
@@ -225,49 +246,43 @@ async def _openrouter_request(
         }
     )
 
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=60.0,
-            )
-            logger.debug(
-                "OpenRouter API response received",
-                extra={
-                    "status_code": response.status_code,
-                    "response_size": len(response.content),
-                    "model": model
-                }
-            )
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                logger.error(
-                    "OpenRouter API returned error status",
-                    extra={
-                        "status_code": exc.response.status_code,
-                        "model": model,
-                        "response_text": exc.response.text[:500]
-                    }
-                )
-                _handle_response_error(exc, "openrouter")
-            return response.json()
-        except httpx.HTTPStatusError as exc:
-            _handle_response_error(exc, "openrouter")
-        except httpx.HTTPError as exc:
-            logger.error(
-                "OpenRouter HTTP error",
-                extra={
-                    "error": str(exc),
-                    "model": model,
-                    "url": url
-                }
-            )
-            raise LLMError(f"OpenRouter request failed: {exc}") from exc
-
-    raise LLMError("OpenRouter request failed: unknown error")
+    client = _get_http_client()
+    try:
+        response = await client.post(
+            url,
+            headers=headers,
+            json=payload,
+        )
+        logger.debug(
+            "OpenRouter API response received",
+            extra={
+                "status_code": response.status_code,
+                "response_size": len(response.content),
+                "model": model
+            }
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "OpenRouter API returned error status",
+            extra={
+                "status_code": exc.response.status_code,
+                "model": model,
+                "response_text": exc.response.text[:500]
+            }
+        )
+        _handle_response_error(exc, "openrouter")
+    except httpx.HTTPError as exc:
+        logger.error(
+            "OpenRouter HTTP error",
+            extra={
+                "error": str(exc),
+                "model": model,
+                "url": url
+            }
+        )
+        raise LLMError(f"OpenRouter request failed: {exc}") from exc
 
 
 async def request_chat_completion(
@@ -331,4 +346,4 @@ async def request_chat_completion(
         )
 
 
-__all__ = ["request_chat_completion", "LLMError"]
+__all__ = ["request_chat_completion", "LLMError", "_close_http_client"]

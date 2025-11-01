@@ -59,6 +59,11 @@ class ConversationLog:
         self._ensure_directory()
         self._working_memory_log = _resolve_working_memory_log(user_id)
 
+    @property
+    def user_id(self) -> str:
+        """Return the user ID for this conversation log."""
+        return self._user_id
+
     def _ensure_directory(self) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,7 +170,7 @@ class ConversationLog:
             return
 
         try:
-            schedule_summarization()
+            schedule_summarization(self.user_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(
                 "failed to schedule summarization",

@@ -13,7 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/api';
 import type { ChatBubble } from '@/components/chat/types';
 
-const POLL_INTERVAL_MS = 1500;
+const POLL_INTERVAL_MS = 10000; // Poll every 10 seconds
 
 const formatEscapeCharacters = (text: string): string => {
   return text
@@ -150,10 +150,9 @@ export default function Page() {
           pollAttempts++;
           
           try {
-            const res = await fetch('/api/chat/history', { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              const currentMessages = toBubbles(data);
+            const response = await apiClient.getChatHistory();
+            if (response.ok && response.data) {
+              const currentMessages = toBubbles(response.data);
               
               // Check if the last message is from assistant and contains our user message
               const lastMessage = currentMessages[currentMessages.length - 1];

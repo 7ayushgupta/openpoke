@@ -95,11 +95,15 @@ class ApiClient {
   async disconnectGmail() {
     return this.request('/api/v1/gmail/disconnect', {
       method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 
   async getGmailStatus() {
-    return this.request('/api/v1/gmail/status');
+    return this.request('/api/v1/gmail/status', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
   }
 
   // MCP API
@@ -126,7 +130,7 @@ class ApiClient {
 
   // Timezone API
   async setTimezone(timezone: string) {
-    return this.request('/api/v1/timezone', {
+    return this.request('/api/v1/meta/timezone', {
       method: 'POST',
       body: JSON.stringify({ timezone }),
     });

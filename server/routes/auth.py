@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from ..logging_config import logger
 from ..models.auth import User, UserCreate, UserResponse
 from ..middleware.auth import get_current_user
-from ..services.auth.oauth_service import get_oauth_service
+from ..services.auth.oauth_service import get_oauth_service, get_oauth_state_store
 from ..services.auth.jwt_service import get_jwt_service
 from ..services.auth.user_store import get_user_store
 
@@ -22,15 +22,16 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 async def login() -> Dict[str, str]:
     """Initiate OAuth login flow."""
     oauth_service = get_oauth_service()
+    state_store = get_oauth_state_store()
     
     try:
-        # Generate state for CSRF protection
-        state = oauth_service.generate_state()
+        # Generate and STORE state for CSRF protection
+        state = state_store.create_state()
         
         # Generate authorization URL
         auth_url = oauth_service.get_authorization_url(state)
         
-        logger.info(f"OAuth login initiated with state: {state}")
+        logger.info("OAuth login initiated")
         return {
             "auth_url": auth_url,
             "state": state
@@ -49,6 +50,16 @@ async def oauth_callback(
     state: str = Query(..., description="State parameter for CSRF protection")
 ) -> Dict[str, str]:
     """Handle OAuth callback and create user session."""
+    state_store = get_oauth_state_store()
+    
+    # VALIDATE STATE FIRST - Critical security check!
+    if not state_store.validate_and_consume_state(state):
+        logger.warning("Invalid OAuth state parameter detected - possible CSRF attack")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired state parameter. Please try logging in again."
+        )
+    
     oauth_service = get_oauth_service()
     jwt_service = get_jwt_service()
     user_store = get_user_store()

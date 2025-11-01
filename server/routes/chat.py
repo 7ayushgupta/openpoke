@@ -26,13 +26,13 @@ def chat_history(current_user: User = Depends(get_current_user)) -> ChatHistoryR
 
 
 @router.delete("/history", response_model=ChatHistoryClearResponse)
-def clear_history(current_user: User = Depends(get_current_user)) -> ChatHistoryClearResponse:
+async def clear_history(current_user: User = Depends(get_current_user)) -> ChatHistoryClearResponse:
     from ..services import get_execution_agent_logs, get_agent_roster
-    from ..agents.execution_agent.batch_manager import ExecutionBatchManager
+    from ..agents.interaction_agent.tools import get_execution_batch_manager
     from ..logging_config import logger
 
     # Get current running agents count before clearing
-    batch_manager = ExecutionBatchManager()
+    batch_manager = get_execution_batch_manager()
     pending_executions = batch_manager.get_pending_executions()
     running_count = len(pending_executions)
     
@@ -57,9 +57,8 @@ def clear_history(current_user: User = Depends(get_current_user)) -> ChatHistory
     # Kill all running execution agents
     if running_count > 0:
         logger.info(f"[CLEAR_HISTORY] Killing {running_count} running execution agents")
-        # Clear pending executions (this effectively "kills" them)
-        batch_manager._pending.clear()
-        batch_manager._batch_state = None
+        # Use public clear method instead of accessing private attributes
+        await batch_manager.clear()
         logger.info("[CLEAR_HISTORY] All running execution agents killed")
     else:
         logger.info("[CLEAR_HISTORY] No running execution agents to kill")

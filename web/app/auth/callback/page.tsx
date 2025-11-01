@@ -25,7 +25,9 @@ export default function OAuthCallback() {
         const data = await resp.json();
         if (resp.ok && data?.access_token) {
           localStorage.setItem('openpoke_token', data.access_token);
-          router.replace('/');
+          // Use window.location to force a full page reload
+          // This ensures the AuthContext properly initializes with the new token
+          window.location.href = '/';
           return;
         }
       } catch {

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import secrets
+import threading
+from datetime import datetime, timedelta
 from typing import Dict, Optional
 from urllib.parse import urlencode
 
@@ -10,6 +12,78 @@ from httpx import AsyncClient
 
 from ...config import get_settings
 from ...logging_config import logger
+
+
+class OAuthStateStore:
+    """
+    Store and validate OAuth state parameters for CSRF protection.
+    
+    NOTE: This uses in-memory storage. For production with multiple servers,
+    use Redis or a database for shared state across instances.
+    """
+    
+    def __init__(self):
+        self._states: Dict[str, Dict] = {}
+        self._lock = threading.Lock()
+    
+    def create_state(self) -> str:
+        """Generate and store a new state token."""
+        state = secrets.token_urlsafe(32)
+        
+        with self._lock:
+            self._states[state] = {
+                "created_at": datetime.utcnow(),
+                "used": False
+            }
+            # Cleanup old states to prevent memory leak
+            self._cleanup_expired_states()
+        
+        logger.debug(f"Created OAuth state token")
+        return state
+    
+    def validate_and_consume_state(self, state: str) -> bool:
+        """
+        Validate state parameter and mark as used (one-time use).
+        Returns True if valid, False otherwise.
+        """
+        with self._lock:
+            # Check if state exists
+            if state not in self._states:
+                logger.warning("OAuth state not found - possible CSRF attack")
+                return False
+            
+            state_data = self._states[state]
+            
+            # Check if already used
+            if state_data.get("used"):
+                logger.warning("OAuth state already used - possible replay attack")
+                return False
+            
+            # Check if expired (5 minute window)
+            age = datetime.utcnow() - state_data["created_at"]
+            if age > timedelta(minutes=5):
+                # Remove expired state
+                del self._states[state]
+                logger.warning(f"OAuth state expired (age: {age.total_seconds():.1f}s)")
+                return False
+            
+            # Mark as used and validate
+            state_data["used"] = True
+            logger.debug("OAuth state validated successfully")
+            return True
+    
+    def _cleanup_expired_states(self):
+        """Remove states older than 10 minutes to prevent memory leaks."""
+        cutoff = datetime.utcnow() - timedelta(minutes=10)
+        expired_states = [
+            state for state, data in self._states.items()
+            if data["created_at"] < cutoff
+        ]
+        for state in expired_states:
+            self._states.pop(state, None)
+        
+        if expired_states:
+            logger.debug(f"Cleaned up {len(expired_states)} expired OAuth states")
 
 
 class OAuthService:
@@ -115,8 +189,9 @@ class OAuthService:
         return secrets.token_urlsafe(32)
 
 
-# Global OAuth service instance
+# Global instances
 _oauth_service = OAuthService()
+_oauth_state_store = OAuthStateStore()
 
 
 def get_oauth_service() -> OAuthService:
@@ -124,5 +199,10 @@ def get_oauth_service() -> OAuthService:
     return _oauth_service
 
 
-__all__ = ["OAuthService", "get_oauth_service"]
+def get_oauth_state_store() -> OAuthStateStore:
+    """Get the singleton OAuth state store instance."""
+    return _oauth_state_store
+
+
+__all__ = ["OAuthService", "get_oauth_service", "OAuthStateStore", "get_oauth_state_store"]
 

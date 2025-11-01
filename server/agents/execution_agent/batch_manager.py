@@ -21,6 +21,7 @@ class PendingExecution:
     agent_name: str
     instructions: str
     batch_id: str
+    user_id: str
     created_at: datetime = field(default_factory=datetime.now)
 
 
@@ -29,6 +30,7 @@ class _BatchState:
     """Collect results for a single interaction-agent turn."""
 
     batch_id: str
+    user_id: str
     created_at: datetime = field(default_factory=datetime.now)
     pending: int = 0
     results: List[ExecutionResult] = field(default_factory=list)
@@ -38,8 +40,10 @@ class ExecutionBatchManager:
     """Run execution agents and deliver their combined outcome."""
 
     # Initialize batch manager with timeout and coordination state for execution agents
-    def __init__(self, timeout_seconds: int = 90) -> None:
-        self.timeout_seconds = timeout_seconds
+    def __init__(self, timeout_seconds: Optional[int] = None) -> None:
+        from ...config import get_settings
+        settings = get_settings()
+        self.timeout_seconds = timeout_seconds or settings.execution_batch_timeout_seconds
         self._pending: Dict[str, PendingExecution] = {}
         self._batch_lock = asyncio.Lock()
         self._batch_state: Optional[_BatchState] = None
@@ -62,7 +66,7 @@ class ExecutionBatchManager:
         admin_service.record_execution_agent_spawned()
         logger.info(f"[BATCH] Spawning execution agent '{agent_name}' with instructions: {instructions[:150]}{'...' if len(instructions) > 150 else ''}")
 
-        batch_id = await self._register_pending_execution(agent_name, instructions, request_id)
+        batch_id = await self._register_pending_execution(agent_name, instructions, request_id, user_id)
 
         try:
             logger.info(f"[{agent_name}] Execution started")
@@ -108,13 +112,14 @@ class ExecutionBatchManager:
         agent_name: str,
         instructions: str,
         request_id: str,
+        user_id: str,
     ) -> str:
         """Attach a new execution to the active batch, opening one when required."""
 
         async with self._batch_lock:
             if self._batch_state is None:
                 batch_id = str(uuid.uuid4())
-                self._batch_state = _BatchState(batch_id=batch_id)
+                self._batch_state = _BatchState(batch_id=batch_id, user_id=user_id)
             else:
                 batch_id = self._batch_state.batch_id
 
@@ -124,6 +129,7 @@ class ExecutionBatchManager:
                 agent_name=agent_name,
                 instructions=instructions,
                 batch_id=batch_id,
+                user_id=user_id,
             )
 
             return batch_id
@@ -138,6 +144,7 @@ class ExecutionBatchManager:
         """Record the execution result and dispatch when the batch drains."""
 
         dispatch_payload: Optional[str] = None
+        dispatch_user_id: Optional[str] = None
 
         logger.info(f"[EXECUTION_BATCH] Completing execution for agent: {agent_name}")
         logger.info(f"[EXECUTION_BATCH] Result success: {result.success}")
@@ -158,14 +165,17 @@ class ExecutionBatchManager:
 
             if state.pending == 0:
                 dispatch_payload = self._format_batch_payload(state.results)
+                dispatch_user_id = state.user_id
                 agent_names = [entry.agent_name for entry in state.results]
                 logger.info(f"[EXECUTION_BATCH] Execution batch completed: {', '.join(agent_names)}")
                 logger.info(f"[EXECUTION_BATCH] Batch payload: {dispatch_payload[:300]}{'...' if len(dispatch_payload) > 300 else ''}")
                 self._batch_state = None
+            else:
+                dispatch_user_id = None
 
-        if dispatch_payload:
-            logger.info(f"[EXECUTION_BATCH] Dispatching to interaction agent")
-            await self._dispatch_to_interaction_agent(dispatch_payload)
+        if dispatch_payload and dispatch_user_id:
+            logger.info(f"[EXECUTION_BATCH] Dispatching to interaction agent for user {dispatch_user_id}")
+            await self._dispatch_to_interaction_agent(dispatch_payload, dispatch_user_id)
 
     # Return list of currently pending execution requests for monitoring purposes
     def get_pending_executions(self) -> List[Dict[str, str]]:
@@ -186,15 +196,18 @@ class ExecutionBatchManager:
     async def shutdown(self) -> None:
         """Clear pending bookkeeping and kill all running execution agents."""
         logger.info(f"[BATCH] Shutting down batch manager with {len(self._pending)} running agents")
-        
+        await self.clear()
+        logger.info("[BATCH] All execution agents killed and batch manager shutdown complete")
+
+    # Public method to clear all pending executions and batch state
+    async def clear(self) -> None:
+        """Clear all pending executions and batch state. Useful for resetting the batch manager."""
         # Clear all pending executions (kills running agents)
         self._pending.clear()
         
         # Clear batch state
         async with self._batch_lock:
             self._batch_state = None
-        
-        logger.info("[BATCH] All execution agents killed and batch manager shutdown complete")
 
     # Format multiple execution results into single message for interaction agent
     def _format_batch_payload(self, results: List[ExecutionResult]) -> str:
@@ -208,12 +221,12 @@ class ExecutionBatchManager:
         return "\n".join(entries)
 
     # Forward combined execution results to interaction agent for user response generation
-    async def _dispatch_to_interaction_agent(self, payload: str) -> None:
+    async def _dispatch_to_interaction_agent(self, payload: str, user_id: str) -> None:
         """Send the aggregated execution summary to the interaction agent."""
 
         from ..interaction_agent.runtime import InteractionAgentRuntime
 
-        runtime = InteractionAgentRuntime()
+        runtime = InteractionAgentRuntime(user_id)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -29,15 +30,35 @@ class JWTService:
         self.secret_key = self._get_or_generate_secret_key()
     
     def _get_or_generate_secret_key(self) -> str:
-        """Get JWT secret key from settings or generate one."""
+        """Get JWT secret key from settings - FAILS in production if not set."""
         secret_key = self.settings.jwt_secret_key
         
         if not secret_key:
-            # Generate a new secret key
+            env = os.getenv("ENVIRONMENT", "development")
+            
+            # FAIL LOUDLY in production
+            if env == "production":
+                raise RuntimeError(
+                    "\n"
+                    "=" * 70 + "\n"
+                    "❌ CRITICAL: JWT_SECRET_KEY is not set!\n"
+                    "=" * 70 + "\n"
+                    "JWT_SECRET_KEY is REQUIRED in production.\n\n"
+                    "Generate a secure key with:\n"
+                    "  python -c 'import secrets; print(secrets.token_urlsafe(32))'\n\n"
+                    "Then set it in your environment:\n"
+                    "  export JWT_SECRET_KEY='your-generated-key-here'\n"
+                    "Or add to .env file:\n"
+                    "  JWT_SECRET_KEY=your-generated-key-here\n"
+                    "=" * 70
+                )
+            
+            # Only allow auto-generation in development
             secret_key = secrets.token_urlsafe(32)
-            logger.warning(
-                "JWT_SECRET_KEY not set, generated a new one. "
-                "Set JWT_SECRET_KEY environment variable for production."
+            logger.error(
+                "⚠️  JWT_SECRET_KEY not set! Using temporary key.\n"
+                "    This key will change on restart, logging out all users.\n"
+                "    Set JWT_SECRET_KEY environment variable before deploying."
             )
         
         return secret_key

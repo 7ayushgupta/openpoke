@@ -80,13 +80,21 @@ class Settings(BaseModel):
     composio_api_key: Optional[str] = Field(default=os.getenv("COMPOSIO_API_KEY"))
 
     # HTTP behaviour
-    cors_allow_origins_raw: str = Field(default=os.getenv("OPENPOKE_CORS_ALLOW_ORIGINS", "*"))
+    cors_allow_origins_raw: str = Field(default=os.getenv("OPENPOKE_CORS_ALLOW_ORIGINS", "http://localhost:3000,http://localhost:8001"))
     enable_docs: bool = Field(default=os.getenv("OPENPOKE_ENABLE_DOCS", "1") != "0")
     docs_url: Optional[str] = Field(default=os.getenv("OPENPOKE_DOCS_URL", "/docs"))
 
     # Summarisation controls
     conversation_summary_threshold: int = Field(default=100)
     conversation_summary_tail_size: int = Field(default=10)
+
+    # Execution and interaction agent settings
+    execution_batch_timeout_seconds: int = Field(default=_env_int("OPENPOKE_EXECUTION_TIMEOUT", 90))
+    max_tool_iterations: int = Field(default=_env_int("OPENPOKE_MAX_TOOL_ITERATIONS", 8))
+    
+    # HTTP client settings
+    http_client_max_keepalive: int = Field(default=_env_int("OPENPOKE_HTTP_MAX_KEEPALIVE", 10))
+    http_client_max_connections: int = Field(default=_env_int("OPENPOKE_HTTP_MAX_CONNECTIONS", 20))
 
     # MCP server configuration
     mcp_servers: List[Dict[str, Any]] = Field(
