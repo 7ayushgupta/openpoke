@@ -42,7 +42,7 @@ ERROR_ITERATION_LIMIT = "Email search orchestrator exceeded iteration limit"
 
 
 _COMPLETION_TOOL_SCHEMA = get_completion_schema()
-_LOG_STORE = get_execution_agent_logs()
+_LOG_STORE = get_execution_agent_logs("admin")
 _EMAIL_CLEANER = EmailTextCleaner(max_url_length=40)
 
 

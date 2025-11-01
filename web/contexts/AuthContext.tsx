@@ -19,6 +19,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Get API base URL - must match the Python backend server
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001';
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        const response = await fetch('/api/v1/auth/me', {
+        const response = await fetch(`${API_BASE}/api/v1/auth/me`, {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
@@ -61,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async () => {
     try {
-      const resp = await fetch('/api/v1/auth/login');
+      const resp = await fetch(`${API_BASE}/api/v1/auth/login`);
       if (!resp.ok) throw new Error('Failed to init login');
       const data = await resp.json();
       const url = (data && (data.auth_url || data.authorization_url)) as string | undefined;
@@ -79,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('openpoke_token');
     
     // Call logout endpoint (optional)
-    fetch('/api/v1/auth/logout', { method: 'POST' }).catch(console.error);
+    fetch(`${API_BASE}/api/v1/auth/logout`, { method: 'POST' }).catch(console.error);
   }, []);
 
   // OAuth callback is handled in /auth/callback

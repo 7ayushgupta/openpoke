@@ -76,6 +76,12 @@ class AgentRoster:
             self._agents.append(agent_name)
             self.save()
 
+    def remove_agent(self, agent_name: str) -> None:
+        """Remove an agent from the roster if present."""
+        if agent_name in self._agents:
+            self._agents.remove(agent_name)
+            self.save()
+
     def get_agents(self) -> list[str]:
         """Get list of all agent names."""
         return list(self._agents)

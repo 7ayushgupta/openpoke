@@ -39,10 +39,10 @@ def _default_formatter(tag: str, timestamp: str, payload: str) -> str:
     return f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
 
 
-def _resolve_working_memory_log() -> "WorkingMemoryLog":
+def _resolve_working_memory_log(user_id: str) -> "WorkingMemoryLog":
     from .summarization import get_working_memory_log
 
-    return get_working_memory_log()
+    return get_working_memory_log(user_id)
 
 
 _ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
@@ -51,12 +51,13 @@ _ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
 class ConversationLog:
     """Append-only conversation log persisted to disk for the interaction agent."""
 
-    def __init__(self, path: Path, formatter: TranscriptFormatter = _default_formatter):
+    def __init__(self, path: Path, user_id: str, formatter: TranscriptFormatter = _default_formatter):
         self._path = path
+        self._user_id = user_id
         self._formatter = formatter
         self._lock = threading.Lock()
         self._ensure_directory()
-        self._working_memory_log = _resolve_working_memory_log()
+        self._working_memory_log = _resolve_working_memory_log(user_id)
 
     def _ensure_directory(self) -> None:
         try:
@@ -213,7 +214,7 @@ class ConversationLog:
 def get_conversation_log(user_id: str) -> ConversationLog:
     """Get conversation log for a specific user."""
     conversation_log_path = _DATA_DIR / "users" / user_id / "conversation" / "poke_conversation.log"
-    return ConversationLog(conversation_log_path)
+    return ConversationLog(conversation_log_path, user_id)
 
 
 __all__ = ["ConversationLog", "get_conversation_log"]

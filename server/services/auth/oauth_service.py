@@ -6,7 +6,6 @@ import secrets
 from typing import Dict, Optional
 from urllib.parse import urlencode
 
-from authlib.integrations.httpx_client import OAuth2Session
 from httpx import AsyncClient
 
 from ...config import get_settings
@@ -22,8 +21,14 @@ class OAuthService:
         self.google_client_secret = self.settings.oauth_google_client_secret
         self.redirect_uri = self.settings.oauth_redirect_uri
         
+        # Log what was loaded (without exposing secrets)
+        logger.info(f"OAuth Service initialized:")
+        logger.info(f"  - Client ID: {'✓ Set' if self.google_client_id else '✗ MISSING'}")
+        logger.info(f"  - Client Secret: {'✓ Set' if self.google_client_secret else '✗ MISSING'}")
+        logger.info(f"  - Redirect URI: {self.redirect_uri if self.redirect_uri else '✗ MISSING'}")
+        
         if not all([self.google_client_id, self.google_client_secret, self.redirect_uri]):
-            logger.warning("OAuth configuration incomplete - some features may not work")
+            logger.warning("OAuth configuration incomplete - authentication will not work")
     
     def get_authorization_url(self, state: str) -> str:
         """Generate Google OAuth authorization URL."""
@@ -46,8 +51,22 @@ class OAuthService:
     
     async def exchange_code_for_token(self, code: str) -> Dict[str, str]:
         """Exchange authorization code for access token."""
-        if not all([self.google_client_id, self.google_client_secret, self.redirect_uri]):
-            raise ValueError("OAuth configuration incomplete")
+        # Add detailed logging for debugging
+        missing = []
+        if not self.google_client_id:
+            missing.append("OAUTH_GOOGLE_CLIENT_ID")
+        if not self.google_client_secret:
+            missing.append("OAUTH_GOOGLE_CLIENT_SECRET")
+        if not self.redirect_uri:
+            missing.append("OAUTH_REDIRECT_URI")
+        
+        if missing:
+            error_msg = f"OAuth configuration incomplete. Missing: {', '.join(missing)}"
+            logger.error(error_msg)
+            logger.error(f"Current values - Client ID exists: {bool(self.google_client_id)}, "
+                        f"Client Secret exists: {bool(self.google_client_secret)}, "
+                        f"Redirect URI: {self.redirect_uri}")
+            raise ValueError(error_msg)
         
         async with AsyncClient() as client:
             token_data = {
@@ -57,6 +76,8 @@ class OAuthService:
                 "grant_type": "authorization_code",
                 "redirect_uri": self.redirect_uri,
             }
+            
+            logger.debug(f"Attempting token exchange with redirect_uri: {self.redirect_uri}")
             
             response = await client.post(
                 "https://oauth2.googleapis.com/token",

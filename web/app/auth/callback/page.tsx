@@ -3,6 +3,9 @@
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+// Get API base URL - must match the Python backend server
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001';
+
 export default function OAuthCallback() {
   const router = useRouter();
   const params = useSearchParams();
@@ -16,7 +19,7 @@ export default function OAuthCallback() {
         return;
       }
 
-      const url = `/api/v1/auth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+      const url = `${API_BASE}/api/v1/auth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
       try {
         const resp = await fetch(url);
         const data = await resp.json();

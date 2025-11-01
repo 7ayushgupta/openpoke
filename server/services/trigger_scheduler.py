@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Set
 
 from ..agents.execution_agent.batch_manager import ExecutionBatchManager
 from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
-from .triggers import TriggerRecord, get_trigger_service
+from .triggers import TriggerRecord
+from .triggers.store import TriggerStore
+from .triggers.utils import to_storage_timestamp, load_rrule, resolve_timezone
 
 
 UTC = timezone.utc
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_default_db_path = _DATA_DIR / "triggers.db"
 
 
 def _utc_now() -> datetime:
@@ -28,7 +33,7 @@ class TriggerScheduler:
 
     def __init__(self, poll_interval_seconds: float = 10.0) -> None:
         self._poll_interval = poll_interval_seconds
-        self._service = get_trigger_service()
+        self._store = TriggerStore(_default_db_path)
         self._task: Optional[asyncio.Task[None]] = None
         self._running = False
         self._in_flight: Set[int] = set()
@@ -67,7 +72,8 @@ class TriggerScheduler:
 
     async def _poll_once(self) -> None:
         now = _utc_now()
-        due_triggers = self._service.get_due_triggers(before=now)
+        iso_cutoff = to_storage_timestamp(now)
+        due_triggers = self._store.fetch_due(None, iso_cutoff)
         if not due_triggers:
             return
 
@@ -93,6 +99,7 @@ class TriggerScheduler:
             result = await execution_manager.execute_agent(
                 trigger.agent_name,
                 instructions,
+                trigger.user_id,
             )
             if result.success:
                 self._handle_success(trigger, fired_at)
@@ -113,7 +120,7 @@ class TriggerScheduler:
             "Trigger completed",
             extra={"trigger_id": trigger.id, "agent": trigger.agent_name},
         )
-        self._service.schedule_next_occurrence(trigger, fired_at=fired_at)
+        self._schedule_next_occurrence(trigger, fired_at=fired_at)
 
     def _handle_failure(self, trigger: TriggerRecord, fired_at: datetime, error: str) -> None:
         logger.warning(
@@ -124,11 +131,59 @@ class TriggerScheduler:
                 "error": error,
             },
         )
-        self._service.record_failure(trigger, error)
+        self._store.update(
+            trigger.id,
+            trigger.agent_name,
+            trigger.user_id,
+            {"last_error": error},
+        )
         if trigger.recurrence_rule:
-            self._service.schedule_next_occurrence(trigger, fired_at=fired_at)
+            self._schedule_next_occurrence(trigger, fired_at=fired_at)
         else:
-            self._service.clear_next_fire(trigger.id, agent_name=trigger.agent_name)
+            self._store.update(
+                trigger.id,
+                trigger.agent_name,
+                trigger.user_id,
+                {"next_trigger": None},
+            )
+
+    def _schedule_next_occurrence(self, trigger: TriggerRecord, fired_at: datetime) -> None:
+        """Schedule the next occurrence of a recurring trigger."""
+        if not trigger.recurrence_rule:
+            # Mark as completed
+            self._store.update(
+                trigger.id,
+                trigger.agent_name,
+                trigger.user_id,
+                {
+                    "status": "completed",
+                    "next_trigger": None,
+                    "last_error": None,
+                },
+            )
+            return
+
+        tz = resolve_timezone(trigger.timezone)
+        next_fire = self._compute_next_after(trigger.recurrence_rule, fired_at, tz)
+        
+        fields = {
+            "next_trigger": to_storage_timestamp(next_fire) if next_fire else None,
+            "last_error": None,
+        }
+        if next_fire is None:
+            fields["status"] = "completed"
+        
+        self._store.update(trigger.id, trigger.agent_name, trigger.user_id, fields)
+
+    def _compute_next_after(self, stored_recurrence: str, fired_at: datetime, tz) -> Optional[datetime]:
+        """Compute the next occurrence after the given time."""
+        rule = load_rrule(stored_recurrence)
+        next_occurrence = rule.after(fired_at.astimezone(tz), inc=False)
+        if next_occurrence is None:
+            return None
+        if next_occurrence.tzinfo is None:
+            next_occurrence = next_occurrence.replace(tzinfo=tz)
+        return next_occurrence.astimezone(tz)
 
     def _format_instructions(self, trigger: TriggerRecord, fired_at: datetime) -> str:
         scheduled_for = trigger.next_trigger or _isoformat(fired_at)

@@ -83,7 +83,7 @@ class TriggerService:
         last_error: Optional[str] = None,
         clear_error: bool = False,
     ) -> Optional[TriggerRecord]:
-        existing = self._store.fetch_one(trigger_id, agent_name)
+        existing = self._store.fetch_one(trigger_id, agent_name, self._user_id)
         if existing is None:
             return None
 
@@ -179,8 +179,8 @@ class TriggerService:
         if not fields:
             return existing
 
-        updated = self._store.update(trigger_id, agent_name, fields)
-        return self._store.fetch_one(trigger_id, agent_name) if updated else existing
+        updated = self._store.update(trigger_id, agent_name, self._user_id, fields)
+        return self._store.fetch_one(trigger_id, agent_name, self._user_id) if updated else existing
 
     def list_triggers(self, *, agent_name: str) -> List[TriggerRecord]:
         return self._store.list_for_agent(agent_name, self._user_id)
@@ -195,6 +195,7 @@ class TriggerService:
         self._store.update(
             trigger_id,
             agent_name,
+            self._user_id,
             {
                 "status": "completed",
                 "next_trigger": None,
@@ -220,13 +221,14 @@ class TriggerService:
         }
         if next_fire is None:
             fields["status"] = "completed"
-        self._store.update(trigger.id, trigger.agent_name, fields)
-        return self._store.fetch_one(trigger.id, trigger.agent_name)
+        self._store.update(trigger.id, trigger.agent_name, trigger.user_id, fields)
+        return self._store.fetch_one(trigger.id, trigger.agent_name, trigger.user_id)
 
     def record_failure(self, trigger: TriggerRecord, error: str) -> None:
         self._store.update(
             trigger.id,
             trigger.agent_name,
+            trigger.user_id,
             {
                 "last_error": error,
             },
@@ -236,14 +238,16 @@ class TriggerService:
         self._store.update(
             trigger_id,
             agent_name,
+            self._user_id,
             {
                 "next_trigger": None,
             },
         )
-        return self._store.fetch_one(trigger_id, agent_name)
+        return self._store.fetch_one(trigger_id, agent_name, self._user_id)
 
     def clear_all(self) -> None:
-        self._store.clear_all()
+        """Clear all triggers for this user."""
+        self._store.clear_all(self._user_id)
 
     def _compute_next_fire(
         self,

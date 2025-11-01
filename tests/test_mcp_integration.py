@@ -5,14 +5,16 @@ import asyncio
 import json
 from pathlib import Path
 
-# Add the server directory to the path
+# Add the parent directory to the path
 import sys
-sys.path.insert(0, str(Path(__file__).parent / "server"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from mcp_client.models import MCPServerConfig
-from mcp_client.registry import MCPRegistry
+import pytest
+from server.mcp_client.models import MCPServerConfig
+from server.mcp_client.registry import MCPRegistry
 
 
+@pytest.mark.asyncio
 async def test_zomato_mcp_integration():
     """Test MCP integration with Zomato server."""
     print("🧪 Testing MCP Integration with Zomato Server")
@@ -69,13 +71,14 @@ async def test_zomato_mcp_integration():
     return True
 
 
+@pytest.mark.asyncio
 async def test_mcp_client_direct():
     """Test MCP client directly with Zomato server."""
     print("\n🔬 Testing MCP Client Direct Connection")
     print("=" * 50)
     
-    from mcp_client.client import MCPClient
-    from mcp_client.models import MCPServerConfig, MCPToolCall
+    from server.mcp_client.client import MCPClient
+    from server.mcp_client.models import MCPServerConfig, MCPToolCall
     
     config = MCPServerConfig(
         name="zomato",

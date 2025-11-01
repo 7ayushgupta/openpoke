@@ -124,9 +124,10 @@ class TriggerStore:
             rows = conn.execute(sql, params).fetchall()
         return [self._row_to_record(row) for row in rows]
 
-    def clear_all(self) -> None:
+    def clear_all(self, user_id: str) -> None:
+        """Clear all triggers for a specific user."""
         with self._lock, self._connect() as conn:
-            conn.execute("DELETE FROM triggers")
+            conn.execute("DELETE FROM triggers WHERE user_id = ?", (user_id,))
 
     def _row_to_record(self, row: sqlite3.Row) -> TriggerRecord:
         data = dict(row)

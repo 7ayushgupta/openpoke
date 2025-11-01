@@ -6,8 +6,8 @@ import shutil
 import sqlite3
 from pathlib import Path
 
-from ...config import get_settings
-from ...logging_config import logger
+from ..config import get_settings
+from ..logging_config import logger
 
 
 def run_migration() -> bool:
