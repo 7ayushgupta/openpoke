@@ -27,7 +27,7 @@ def _resolve_interaction_runtime(user_id: str) -> "InteractionAgentRuntime":
 
 DEFAULT_POLL_INTERVAL_SECONDS = 60.0
 DEFAULT_LOOKBACK_MINUTES = 10
-DEFAULT_MAX_RESULTS = 50
+DEFAULT_MAX_RESULTS = 5
 DEFAULT_SEEN_LIMIT = 300
 
 
@@ -259,22 +259,32 @@ class MultiUserWatcherManager:
             if self._running:
                 logger.warning("MultiUserWatcherManager already running")
                 return
-            
             self._running = True
-            logger.info("MultiUserWatcherManager starting")
-            
-            # Start initial watchers for connected users
+
+        logger.info("MultiUserWatcherManager starting")
+
+        # Perform the initial refresh outside the lock so nested lock usage
+        # inside _ensure_watcher_for_user does not deadlock on startup.
+        try:
             await self._refresh_watchers()
-            
-            # Start background refresh task
+        except Exception:
+            # If refresh fails, mark the manager as not running and re-raise
+            async with self._lock:
+                self._running = False
+            raise
+
+        async with self._lock:
             try:
                 loop = asyncio.get_running_loop()
-                self._refresh_task = loop.create_task(self._refresh_loop(), name="watcher-manager-refresh")
-                logger.info("MultiUserWatcherManager started successfully")
+                refresh_task = loop.create_task(self._refresh_loop(), name="watcher-manager-refresh")
             except RuntimeError:
                 logger.error("No running event loop available for watcher manager")
                 self._running = False
-    
+                return
+
+            self._refresh_task = refresh_task
+            logger.info("MultiUserWatcherManager started successfully")
+
     async def stop(self) -> None:
         """Stop all watchers and the manager."""
         async with self._lock:

@@ -11,6 +11,11 @@ from fastapi.responses import JSONResponse
 
 from ...config import Settings, get_settings
 from ...logging_config import logger
+
+try:  # Optional dependency guards for precise error handling
+    from composio_client import BadRequestError  # type: ignore
+except Exception:  # pragma: no cover - fallback when class unavailable
+    BadRequestError = ()  # type: ignore
 from ...models import GmailConnectPayload, GmailDisconnectPayload, GmailStatusPayload
 from ...utils import error_response
 
@@ -745,6 +750,19 @@ def execute_gmail_tool(
         )
         return normalized_result
         
+    except BadRequestError as exc:  # type: ignore[misc]
+        logger.warning(
+            "Gmail tool request rejected due to size constraints",
+            extra={
+                "tool": tool_name,
+                "user_id": composio_user_id,
+                "arguments": prepared_arguments,
+                "error": str(exc),
+            },
+        )
+        raise RuntimeError(
+            f"{tool_name} request exceeded provider limits: {exc}"
+        ) from exc
     except Exception as exc:
         logger.exception(
             "Gmail tool execution failed",
