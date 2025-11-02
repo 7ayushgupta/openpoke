@@ -229,7 +229,7 @@ def test_composio_import():
         print(f"❌ Failed to initialize Composio client: {e}")
         return False
 
-def test_composio_connectivity():
+def test_composio_connectivity(client):
     """Test basic connectivity to Composio services."""
     print("\n🌐 Testing Composio Connectivity...")
     print("=" * 50)
@@ -244,7 +244,7 @@ def test_composio_connectivity():
         print(f"❌ Composio connectivity test failed: {e}")
         return False
 
-def test_gmail_auth_config():
+def test_gmail_auth_config(client):
     """Test Gmail authentication configuration."""
     print("\n🔐 Testing Gmail Auth Configuration...")
     print("=" * 50)

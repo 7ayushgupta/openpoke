@@ -59,10 +59,10 @@ def get_all_connected_gmail_users() -> List[Tuple[str, str]]:
         logger.debug("[GET_ALL_CONNECTED] Calling connected_accounts.list(toolkit_slugs=['GMAIL'])")
         items = client.connected_accounts.list(toolkit_slugs=["GMAIL"])
         
-        # Parse the response
-        data = getattr(items, "data", None)
+        # Parse the response - Composio returns .items not .data for connected_accounts.list()
+        data = getattr(items, "items", None)
         if data is None and isinstance(items, dict):
-            data = items.get("data")
+            data = items.get("items") or items.get("data")
         
         logger.info(f"[GET_ALL_CONNECTED] Received {len(data) if data else 0} accounts from Composio")
         
@@ -316,9 +316,9 @@ def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONRe
                 user_ids=[user_id], 
                 toolkit_slugs=["GMAIL"]
             )
-            existing_data = getattr(existing_items, "data", None)
+            existing_data = getattr(existing_items, "items", None)
             if existing_data is None and isinstance(existing_items, dict):
-                existing_data = existing_items.get("data")
+                existing_data = existing_items.get("items") or existing_items.get("data")
             
             if existing_data:
                 # User already has Gmail connected
@@ -405,9 +405,9 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
                 # First, try querying ALL connected accounts (no filters at all)
                 logger.info(f"[FETCH_STATUS] Step 1: Querying ALL connected accounts (no filters)")
                 all_accounts_items = client.connected_accounts.list()
-                all_accounts_data = getattr(all_accounts_items, "data", None)
+                all_accounts_data = getattr(all_accounts_items, "items", None)
                 if all_accounts_data is None and isinstance(all_accounts_items, dict):
-                    all_accounts_data = all_accounts_items.get("data")
+                    all_accounts_data = all_accounts_items.get("items") or all_accounts_items.get("data")
                 
                 logger.info(f"[FETCH_STATUS] Found {len(all_accounts_data) if all_accounts_data else 0} total connected accounts (all toolkits)")
                 if all_accounts_data:
@@ -436,9 +436,9 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
                 # Now try querying Gmail-specific accounts
                 logger.info(f"[FETCH_STATUS] Step 2: Querying ALL Gmail accounts (toolkit filter)")
                 all_items = client.connected_accounts.list(toolkit_slugs=["GMAIL"])
-                all_data = getattr(all_items, "data", None)
+                all_data = getattr(all_items, "items", None)
                 if all_data is None and isinstance(all_items, dict):
-                    all_data = all_items.get("data")
+                    all_data = all_items.get("items") or all_items.get("data")
                 
                 logger.info(f"[FETCH_STATUS] Found {len(all_data) if all_data else 0} Gmail-specific accounts")
                 if all_data:
@@ -461,9 +461,9 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
                 )
                 logger.debug(f"[FETCH_STATUS] Got response from connected_accounts.list with user_ids filter")
                 
-                data = getattr(items, "data", None)
+                data = getattr(items, "items", None)
                 if data is None and isinstance(items, dict):
-                    data = items.get("data")
+                    data = items.get("items") or items.get("data")
                     
                 logger.info(f"[FETCH_STATUS] With user_ids filter: Found {len(data) if data else 0} Gmail accounts")
                 
@@ -596,9 +596,9 @@ def disconnect_account(payload: GmailDisconnectPayload) -> JSONResponse:
     else:
         try:
             items = client.connected_accounts.list(user_ids=[user_id], toolkit_slugs=["GMAIL"])
-            data = getattr(items, "data", None)
+            data = getattr(items, "items", None)
             if data is None and isinstance(items, dict):
-                data = items.get("data")
+                data = items.get("items") or items.get("data")
         except Exception as exc:  # pragma: no cover - dependent on SDK
             logger.exception("Failed to list Gmail connections", extra={"user_id": user_id})
             return error_response(
@@ -652,29 +652,47 @@ def disconnect_account(payload: GmailDisconnectPayload) -> JSONResponse:
 
 
 def _normalize_tool_response(result: Any) -> Dict[str, Any]:
+    """Normalize Composio tool response to a dictionary format.
+    
+    Composio returns response objects that may have .data, .model_dump(), etc.
+    This function ensures we always get a consistent dict structure.
+    """
     payload_dict: Optional[Dict[str, Any]] = None
+    
+    # Try pydantic v2 model_dump
     try:
         if hasattr(result, "model_dump"):
             payload_dict = result.model_dump()  # type: ignore[assignment]
+            logger.debug("Normalized via model_dump()")
         elif hasattr(result, "dict"):
+            # Try pydantic v1 dict
             payload_dict = result.dict()  # type: ignore[assignment]
-    except Exception:
+            logger.debug("Normalized via dict()")
+    except Exception as exc:
+        logger.debug(f"Failed to normalize via model_dump/dict: {exc}")
         payload_dict = None
 
+    # Try pydantic v2 model_dump_json
     if payload_dict is None:
         try:
             if hasattr(result, "model_dump_json"):
                 payload_dict = json.loads(result.model_dump_json())
-        except Exception:
+                logger.debug("Normalized via model_dump_json()")
+        except Exception as exc:
+            logger.debug(f"Failed to normalize via model_dump_json: {exc}")
             payload_dict = None
 
+    # Fallback to treating as plain dict/list
     if payload_dict is None:
         if isinstance(result, dict):
             payload_dict = result
+            logger.debug("Using result as-is (already dict)")
         elif isinstance(result, list):
             payload_dict = {"items": result}
+            logger.debug("Wrapped list result in dict")
         else:
             payload_dict = {"repr": str(result)}
+            logger.debug(f"Wrapped unknown type {type(result).__name__} as string repr")
 
     return payload_dict
 

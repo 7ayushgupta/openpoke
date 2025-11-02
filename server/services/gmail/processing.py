@@ -358,10 +358,15 @@ def parse_gmail_fetch_response(
 
     for container in containers:
         if not isinstance(container, dict):
+            logger.debug(
+                "Skipping non-dict container in Gmail response",
+                extra={"container_type": type(container).__name__}
+            )
             continue
 
         messages_block: Optional[Sequence[Any]] = None
 
+        # Try to extract from result.data.messages structure (Composio standard format)
         data_section = container.get("data")
         if isinstance(data_section, dict):
             token = data_section.get("nextPageToken")
@@ -370,22 +375,43 @@ def parse_gmail_fetch_response(
             candidate = data_section.get("messages")
             if isinstance(candidate, list):
                 messages_block = candidate
+                logger.debug(
+                    "Extracted messages from data.messages",
+                    extra={"message_count": len(candidate)}
+                )
 
+        # Fallback: try to extract from container.messages directly
         if messages_block is None:
             candidate = container.get("messages")
             if isinstance(candidate, list):
                 messages_block = candidate
+                logger.debug(
+                    "Extracted messages from container.messages",
+                    extra={"message_count": len(candidate)}
+                )
 
         if not messages_block:
+            logger.debug(
+                "No messages found in container",
+                extra={"container_keys": list(container.keys()) if isinstance(container, dict) else None}
+            )
             continue
 
         for message in messages_block:
             if not isinstance(message, dict):
+                logger.warning(
+                    "Skipping non-dict message in Gmail response",
+                    extra={"message_type": type(message).__name__}
+                )
                 continue
             processed = build_processed_email(message, query=query, cleaner=cleaner)
             if processed:
                 emails.append(processed)
 
+    logger.debug(
+        "Parsed Gmail fetch response",
+        extra={"total_emails": len(emails), "next_page_token": next_page is not None}
+    )
     return emails, next_page
 
 
