@@ -29,40 +29,37 @@ export function ChatMessages({ messages, isWaitingForResponse, scrollContainerRe
                 isUser ? 'bubble-out' : 'bubble-in',
                 tail ? (isUser ? 'bubble-tail-out' : 'bubble-tail-in') : '',
                 isDraft && 'whitespace-pre-wrap',
-                'markdown-content',
               )}
             >
-              <div className={clsx(isDraft ? 'block whitespace-pre-wrap' : 'whitespace-pre-wrap')}>
-                <ReactMarkdown
-                  components={{
-                    p: ({ children }) => <p className="my-1 first:mt-0 last:mb-0">{children}</p>,
-                    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                    em: ({ children }) => <em className="italic">{children}</em>,
-                    ul: ({ children }) => <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>,
-                    ol: ({ children }) => <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>,
-                    li: ({ children }) => <li className="pl-1">{children}</li>,
-                    code: ({ children }) => (
-                      <code className="rounded bg-black/10 px-1 py-0.5 text-xs font-mono">{children}</code>
-                    ),
-                    pre: ({ children }) => (
-                      <pre className="my-1 overflow-x-auto rounded bg-black/10 p-2 text-xs">{children}</pre>
-                    ),
-                    h1: ({ children }) => <h1 className="my-2 text-base font-bold">{children}</h1>,
-                    h2: ({ children }) => <h2 className="my-2 text-sm font-bold">{children}</h2>,
-                    h3: ({ children }) => <h3 className="my-1.5 text-sm font-semibold">{children}</h3>,
-                    blockquote: ({ children }) => (
-                      <blockquote className="my-1 border-l-2 border-current/30 pl-2 italic">{children}</blockquote>
-                    ),
-                    a: ({ children, href }) => (
-                      <a href={href} className="underline hover:opacity-80" target="_blank" rel="noopener noreferrer">
-                        {children}
-                      </a>
-                    ),
-                  }}
-                >
-                  {message.text}
-                </ReactMarkdown>
-              </div>
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <p className="my-1 first:mt-0 last:mb-0">{children}</p>,
+                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                  em: ({ children }) => <em className="italic">{children}</em>,
+                  ul: ({ children }) => <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>,
+                  ol: ({ children }) => <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>,
+                  li: ({ children }) => <li className="pl-1">{children}</li>,
+                  code: ({ children }) => (
+                    <code className="rounded bg-black/10 px-1 py-0.5 text-xs font-mono">{children}</code>
+                  ),
+                  pre: ({ children }) => (
+                    <pre className="my-1 overflow-x-auto rounded bg-black/10 p-2 text-xs">{children}</pre>
+                  ),
+                  h1: ({ children }) => <h1 className="my-2 text-base font-bold">{children}</h1>,
+                  h2: ({ children }) => <h2 className="my-2 text-sm font-bold">{children}</h2>,
+                  h3: ({ children }) => <h3 className="my-1.5 text-sm font-semibold">{children}</h3>,
+                  blockquote: ({ children }) => (
+                    <blockquote className="my-1 border-l-2 border-current/30 pl-2 italic">{children}</blockquote>
+                  ),
+                  a: ({ children, href }) => (
+                    <a href={href} className="underline hover:opacity-80" target="_blank" rel="noopener noreferrer">
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {message.text}
+              </ReactMarkdown>
             </div>
           </div>
         );
@@ -78,11 +75,9 @@ function TypingIndicator() {
     <div className="flex justify-start">
       <div className="bubble-in bubble-tail-in">
         <div className="flex items-center space-x-1">
-          <div className="flex space-x-1">
-            <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.3s]"></div>
-            <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.15s]"></div>
-            <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400"></div>
-          </div>
+          <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.3s]"></div>
+          <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.15s]"></div>
+          <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400"></div>
         </div>
       </div>
     </div>

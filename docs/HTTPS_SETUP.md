@@ -353,7 +353,7 @@ export ENVIRONMENT=production
 export OPENPOKE_CORS_ALLOW_ORIGINS=https://yourdomain.com
 
 # Update OAuth redirect URI
-export OAUTH_REDIRECT_URI=https://yourdomain.com/auth/callback
+export OAUTH_REDIRECT_URI=https://yourdomain.com/api/v1/auth/callback
 
 # Update in Google Cloud Console too!
 # OAuth → Credentials → Authorized redirect URIs

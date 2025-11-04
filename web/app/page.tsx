@@ -11,17 +11,10 @@ import { useAutoScroll } from '@/components/chat/useAutoScroll';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/api';
+import { formatEscapeCharacters } from '@/lib/text-utils';
 import type { ChatBubble } from '@/components/chat/types';
 
 const POLL_INTERVAL_MS = 10000; // Poll every 10 seconds
-
-const formatEscapeCharacters = (text: string): string => {
-  return text
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\r/g, '\r')
-    .replace(/\\\\/g, '\\');
-};
 
 const isRenderableMessage = (entry: any) =>
   typeof entry?.role === 'string' &&

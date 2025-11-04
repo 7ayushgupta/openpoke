@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import re
 import threading
-from html import escape, unescape
+from html import escape
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
 
 from ...logging_config import logger
+from ...utils.payload import decode_payload, encode_payload
 from ...utils.timezones import now_in_user_timezone
 
 
@@ -21,18 +22,6 @@ def _slugify(name: str) -> str:
     while "--" in slug:
         slug = slug.replace("--", "-")
     return slug or "agent"
-
-
-def _encode_payload(payload: str) -> str:
-    """Encode payload for storage."""
-    normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
-    collapsed = normalized.replace("\n", "\\n")
-    return escape(collapsed, quote=False)
-
-
-def _decode_payload(payload: str) -> str:
-    """Decode payload from storage."""
-    return unescape(payload).replace("\\n", "\n")
 
 
 _ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
@@ -69,7 +58,7 @@ class ExecutionAgentLogStore:
 
     def _append(self, agent_name: str, tag: str, payload: str) -> None:
         """Append an entry with the given tag."""
-        encoded = _encode_payload(str(payload))
+        encoded = encode_payload(str(payload))
         timestamp = now_in_user_timezone("%Y-%m-%d %H:%M:%S")
         entry = f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
 
@@ -107,7 +96,7 @@ class ExecutionAgentLogStore:
             match.group(1): match.group(2) for match in _ATTR_PATTERN.finditer(attr_string)
         }
         timestamp = attributes.get("timestamp", "")
-        payload = _decode_payload(stripped[open_end + 1 : close_start])
+        payload = decode_payload(stripped[open_end + 1 : close_start])
         return tag, timestamp, payload
 
     def record_request(self, agent_name: str, instructions: str) -> None:

@@ -21,7 +21,7 @@ export OPENPOKE_SUMMARIZER_MODEL=gpt-3.5-turbo
 export OPENPOKE_EMAIL_CLASSIFIER_MODEL=gpt-3.5-turbo
 ```
 
-### Option 2: Use OpenRouter (Multi-Provider Access)
+### Option 2: Use OpenRouter (Multi-Provider Access - Default)
 
 ```bash
 # Set provider to OpenRouter (default)
@@ -30,12 +30,17 @@ export LLM_PROVIDER=openrouter
 # Add your OpenRouter API key
 export OPENROUTER_API_KEY=your-openrouter-key-here
 
-# Use OpenRouter model format (provider/model)
+# Model configuration (optional - these are the defaults)
 export OPENPOKE_INTERACTION_MODEL=anthropic/claude-sonnet-4
 export OPENPOKE_EXECUTION_MODEL=anthropic/claude-sonnet-4
 export OPENPOKE_EXECUTION_SEARCH_MODEL=anthropic/claude-sonnet-4
 export OPENPOKE_SUMMARIZER_MODEL=anthropic/claude-sonnet-4
 export OPENPOKE_EMAIL_CLASSIFIER_MODEL=anthropic/claude-sonnet-4
+
+# For cost optimization, use cheaper models for simpler tasks:
+# export OPENPOKE_EXECUTION_SEARCH_MODEL=anthropic/claude-haiku
+# export OPENPOKE_SUMMARIZER_MODEL=anthropic/claude-haiku
+# export OPENPOKE_EMAIL_CLASSIFIER_MODEL=anthropic/claude-haiku
 ```
 
 ## Environment Variables Reference
@@ -56,13 +61,15 @@ export OPENPOKE_EMAIL_CLASSIFIER_MODEL=anthropic/claude-sonnet-4
 
 ### Model Configuration
 
-| Variable | Description | Example (OpenAI) | Example (OpenRouter) |
-|----------|-------------|------------------|----------------------|
-| `OPENPOKE_INTERACTION_MODEL` | Main conversation handler | `gpt-4-turbo` | `anthropic/claude-sonnet-4` |
-| `OPENPOKE_EXECUTION_MODEL` | Background task processor | `gpt-4-turbo` | `anthropic/claude-sonnet-4` |
-| `OPENPOKE_EXECUTION_SEARCH_MODEL` | Email search tasks | `gpt-3.5-turbo` | `anthropic/claude-haiku` |
-| `OPENPOKE_SUMMARIZER_MODEL` | Conversation summarization | `gpt-3.5-turbo` | `anthropic/claude-haiku` |
-| `OPENPOKE_EMAIL_CLASSIFIER_MODEL` | Email importance | `gpt-3.5-turbo` | `anthropic/claude-haiku` |
+| Variable | Description | Default | Example (OpenAI) | Example (OpenRouter) |
+|----------|-------------|---------|------------------|----------------------|
+| `OPENPOKE_INTERACTION_MODEL` | Main conversation handler | `anthropic/claude-sonnet-4` | `gpt-4-turbo` | `anthropic/claude-sonnet-4` |
+| `OPENPOKE_EXECUTION_MODEL` | Background task processor | `anthropic/claude-sonnet-4` | `gpt-4-turbo` | `anthropic/claude-sonnet-4` |
+| `OPENPOKE_EXECUTION_SEARCH_MODEL` | Email search tasks | `anthropic/claude-sonnet-4` | `gpt-3.5-turbo` | `anthropic/claude-haiku` |
+| `OPENPOKE_SUMMARIZER_MODEL` | Conversation summarization | `anthropic/claude-sonnet-4` | `gpt-3.5-turbo` | `anthropic/claude-haiku` |
+| `OPENPOKE_EMAIL_CLASSIFIER_MODEL` | Email importance | `anthropic/claude-sonnet-4` | `gpt-3.5-turbo` | `anthropic/claude-haiku` |
+
+**Note:** Defaults shown are for OpenRouter. When using OpenAI, you should set these explicitly as OpenAI model names differ.
 
 ## Cost Optimization Tips
 

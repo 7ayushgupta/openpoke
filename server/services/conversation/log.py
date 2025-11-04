@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import re
 import threading
-from html import escape, unescape
+from html import escape
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Protocol, Tuple
 
 from ...config import get_settings
 from ...logging_config import logger
 from ...models import ChatMessage
+from ...utils.payload import decode_payload, encode_payload
 from ...utils.timezones import now_in_user_timezone
 from typing import TYPE_CHECKING
 
@@ -24,18 +25,8 @@ class TranscriptFormatter(Protocol):
         ...
 
 
-def _encode_payload(payload: str) -> str:
-    normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
-    collapsed = normalized.replace("\n", "\\n")
-    return escape(collapsed, quote=False)
-
-
-def _decode_payload(payload: str) -> str:
-    return unescape(payload).replace("\\n", "\n")
-
-
 def _default_formatter(tag: str, timestamp: str, payload: str) -> str:
-    encoded = _encode_payload(payload)
+    encoded = encode_payload(payload)
     return f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
 
 
@@ -110,7 +101,7 @@ class ConversationLog:
             match.group(1): match.group(2) for match in _ATTR_PATTERN.finditer(attr_string)
         }
         timestamp = attributes.get("timestamp", "")
-        return tag, timestamp, _decode_payload(payload)
+        return tag, timestamp, decode_payload(payload)
 
     def iter_entries(self) -> Iterator[Tuple[str, str, str]]:
         with self._lock:

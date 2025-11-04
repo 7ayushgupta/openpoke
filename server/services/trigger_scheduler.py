@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Set
 
@@ -11,20 +11,10 @@ from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
 from .triggers import TriggerRecord
 from .triggers.store import TriggerStore
-from .triggers.utils import to_storage_timestamp, load_rrule, resolve_timezone
+from .triggers.utils import to_storage_timestamp, load_rrule, resolve_timezone, utc_now
 
-
-UTC = timezone.utc
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _default_db_path = _DATA_DIR / "triggers.db"
-
-
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
-def _isoformat(dt: datetime) -> str:
-    return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class TriggerScheduler:
@@ -70,7 +60,7 @@ class TriggerScheduler:
             logger.exception("Trigger scheduler loop crashed", extra={"error": str(exc)})
 
     async def _poll_once(self) -> None:
-        now = _utc_now()
+        now = utc_now()
         iso_cutoff = to_storage_timestamp(now)
         due_triggers = self._store.fetch_due(None, iso_cutoff)
         if not due_triggers:
@@ -84,7 +74,7 @@ class TriggerScheduler:
 
     async def _execute_trigger(self, trigger: TriggerRecord) -> None:
         try:
-            fired_at = _utc_now()
+            fired_at = utc_now()
             instructions = self._format_instructions(trigger, fired_at)
             logger.info(
                 "Dispatching trigger",
@@ -107,7 +97,7 @@ class TriggerScheduler:
                 error_text = result.error or result.response
                 self._handle_failure(trigger, fired_at, error_text)
         except Exception as exc:  # pragma: no cover - defensive
-            self._handle_failure(trigger, _utc_now(), str(exc))
+            self._handle_failure(trigger, utc_now(), str(exc))
             logger.exception(
                 "Trigger execution failed unexpectedly",
                 extra={"trigger_id": trigger.id, "agent": trigger.agent_name},
@@ -186,7 +176,7 @@ class TriggerScheduler:
         return next_occurrence.astimezone(tz)
 
     def _format_instructions(self, trigger: TriggerRecord, fired_at: datetime) -> str:
-        scheduled_for = trigger.next_trigger or _isoformat(fired_at)
+        scheduled_for = trigger.next_trigger or to_storage_timestamp(fired_at)
         metadata_lines = [f"Trigger ID: {trigger.id}"]
         if trigger.recurrence_rule:
             metadata_lines.append(f"Recurrence: {trigger.recurrence_rule}")
@@ -197,7 +187,7 @@ class TriggerScheduler:
 
         metadata = "\n".join(f"- {line}" for line in metadata_lines)
         return (
-            f"Trigger fired at {_isoformat(fired_at)} (UTC).\n"
+            f"Trigger fired at {to_storage_timestamp(fired_at)} (UTC).\n"
             f"Scheduled occurrence time: {scheduled_for}.\n\n"
             f"Metadata:\n{metadata}\n\n"
             f"Payload:\n{trigger.payload}"

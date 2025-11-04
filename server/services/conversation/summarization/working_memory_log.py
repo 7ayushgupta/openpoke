@@ -4,11 +4,12 @@ import json
 import re
 import threading
 from datetime import datetime
-from html import escape, unescape
+from html import escape
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ....logging_config import logger
+from ....utils.payload import decode_payload, encode_payload
 from ....utils.timezones import now_in_user_timezone
 from .state import LogEntry, SummaryState
 
@@ -16,18 +17,8 @@ from .state import LogEntry, SummaryState
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 
-def _encode_payload(payload: str) -> str:
-    normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
-    collapsed = normalized.replace("\n", "\\n")
-    return escape(collapsed, quote=False)
-
-
-def _decode_payload(payload: str) -> str:
-    return unescape(payload).replace("\\n", "\n")
-
-
 def _format_line(tag: str, payload: str, timestamp: Optional[str] = None) -> str:
-    encoded = _encode_payload(payload)
+    encoded = encode_payload(payload)
     if timestamp:
         return f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
     return f"<{tag}>{encoded}</{tag}>\n"
@@ -236,7 +227,7 @@ class WorkingMemoryLog:
             match = re.search(r'timestamp="([^"]*)"', attr_string)
             if match:
                 timestamp = match.group(1)
-        return tag, timestamp, _decode_payload(payload)
+        return tag, timestamp, decode_payload(payload)
 
 
 def get_working_memory_log(user_id: str) -> WorkingMemoryLog:

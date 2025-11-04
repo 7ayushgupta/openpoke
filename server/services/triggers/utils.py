@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional
 
 from dateutil import parser as date_parser
@@ -8,9 +8,8 @@ from dateutil.rrule import rrulestr
 from zoneinfo import ZoneInfo
 
 from ...logging_config import logger
+from ...utils.timezones import UTC
 
-
-UTC = timezone.utc
 DEFAULT_STATUS = "active"
 VALID_STATUSES = {"active", "paused", "completed"}
 
@@ -125,7 +124,6 @@ def load_rrule(recurrence_text: str):
 
 
 __all__ = [
-    "UTC",
     "DEFAULT_STATUS",
     "VALID_STATUSES",
     "build_recurrence",

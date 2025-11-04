@@ -6,6 +6,7 @@ import json
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 
+from ....logging_config import logger
 from server.services.execution import get_execution_agent_logs
 from server.services.timezone_store import get_timezone_store
 from server.services.triggers import TriggerRecord, get_trigger_service
@@ -129,18 +130,18 @@ def _create_trigger_tool(
     from ...services.execution import get_execution_agent_logs
     from ...services.triggers import get_trigger_service
     
-    timezone_value = get_timezone_store().get_timezone()
-    summary_args = {
-        "recurrence_rule": recurrence_rule,
-        "start_time": start_time,
-        "timezone": timezone_value,
-        "status": status,
-    }
-    
-    log_store = get_execution_agent_logs(user_id)
-    trigger_service = get_trigger_service(user_id)
-    
     try:
+        timezone_value = get_timezone_store().get_timezone()
+        summary_args = {
+            "recurrence_rule": recurrence_rule,
+            "start_time": start_time,
+            "timezone": timezone_value,
+            "status": status,
+        }
+        
+        log_store = get_execution_agent_logs(user_id)
+        trigger_service = get_trigger_service(user_id)
+        
         record = trigger_service.create_trigger(
             agent_name=agent_name,
             payload=payload,
@@ -150,10 +151,35 @@ def _create_trigger_tool(
             status=status,
         )
     except Exception as exc:  # pragma: no cover - defensive
-        log_store.record_action(
-            agent_name,
-            description=f"createTrigger failed | details={json.dumps(summary_args, ensure_ascii=False)} | error={exc}",
+        logger.error(
+            f"[{agent_name}] createTrigger failed",
+            extra={
+                "agent_name": agent_name,
+                "user_id": user_id,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
+            exc_info=True,
         )
+        # Try to log to log_store if available, but don't fail if it's not
+        try:
+            log_store = get_execution_agent_logs(user_id)
+            # Build summary_args safely
+            try:
+                summary_args = {
+                    "recurrence_rule": recurrence_rule,
+                    "start_time": start_time,
+                    "timezone": timezone_value if 'timezone_value' in locals() else "unknown",
+                    "status": status,
+                }
+            except Exception:
+                summary_args = {"error": "could not build summary"}
+            log_store.record_action(
+                agent_name,
+                description=f"createTrigger failed | details={json.dumps(summary_args, ensure_ascii=False)} | error={exc}",
+            )
+        except Exception:
+            pass  # If log_store initialization also fails, just skip logging
         return {"error": str(exc)}
 
     log_store.record_action(
@@ -204,11 +230,26 @@ def _update_trigger_tool(
             status=status,
         )
     except Exception as exc:  # pragma: no cover - defensive
-        log_store = get_execution_agent_logs(user_id)
-        log_store.record_action(
-            agent_name,
-            description=f"updateTrigger failed | id={trigger_id_int} | error={exc}",
+        logger.error(
+            f"[{agent_name}] updateTrigger failed",
+            extra={
+                "agent_name": agent_name,
+                "user_id": user_id,
+                "trigger_id": trigger_id_int,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
+            exc_info=True,
         )
+        # Try to log to log_store if available, but don't fail if it's not
+        try:
+            log_store = get_execution_agent_logs(user_id)
+            log_store.record_action(
+                agent_name,
+                description=f"updateTrigger failed | id={trigger_id_int} | error={exc}",
+            )
+        except Exception:
+            pass  # If log_store initialization also fails, just skip logging
         return {"error": str(exc)}
 
     if record is None:
@@ -240,11 +281,25 @@ def _list_triggers_tool(*, agent_name: str, user_id: str = "") -> Dict[str, Any]
         trigger_service = get_trigger_service(user_id)
         records = trigger_service.list_triggers(agent_name=agent_name)
     except Exception as exc:  # pragma: no cover - defensive
-        log_store = get_execution_agent_logs(user_id)
-        log_store.record_action(
-            agent_name,
-            description=f"listTriggers failed | error={exc}",
+        logger.error(
+            f"[{agent_name}] listTriggers failed",
+            extra={
+                "agent_name": agent_name,
+                "user_id": user_id,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
+            exc_info=True,
         )
+        # Try to log to log_store if available, but don't fail if it's not
+        try:
+            log_store = get_execution_agent_logs(user_id)
+            log_store.record_action(
+                agent_name,
+                description=f"listTriggers failed | error={exc}",
+            )
+        except Exception:
+            pass  # If log_store initialization also fails, just skip logging
         return {"error": str(exc)}
 
     log_store = get_execution_agent_logs(user_id)
